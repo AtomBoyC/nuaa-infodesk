@@ -2,7 +2,10 @@
 
 # dependencies
 /node_modules
+**/node_modules/
 /.pnpm-store
+**/.pnpm-store/
+/.venv
 /.pnp
 .pnp.*
 .yarn/*
@@ -14,10 +17,21 @@
 # testing
 /coverage
 
+# python
+__pycache__/
+*.py[cod]
+/data/*.db
+/data/*.db-*
+
 # next.js
 /.next/
+**/.next/
 /.vinext/
+**/.vinext/
+/.vite/
+**/.vite/
 /out/
+**/out/
 
 # misc
 .DS_Store
@@ -38,6 +52,8 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
+**/dist/
 /.wrangler/
+**/.wrangler/
 /outputs/
 /work/
