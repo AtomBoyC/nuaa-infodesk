@@ -5,6 +5,7 @@ import sqlite3
 from typing import Iterable
 
 from info_service_assistant import KNOWLEDGE_BASE, KnowledgeItem
+from knowledge_taxonomy import CATEGORY_ALIASES, canonical_category
 
 
 DEFAULT_DB_PATH = Path("data/info_service.db")
@@ -86,6 +87,7 @@ def upsert_knowledge_item(
     item: KnowledgeItem,
     *,
     is_seed: bool = False,
+    commit: bool = True,
 ) -> None:
     connection.execute(
         """
@@ -111,7 +113,7 @@ def upsert_knowledge_item(
         (
             item.id,
             item.title,
-            item.category,
+            canonical_category(item.category),
             item.audience,
             item.summary,
             item.answer,
@@ -124,7 +126,30 @@ def upsert_knowledge_item(
             1 if is_seed else 0,
         ),
     )
-    connection.commit()
+    if commit:
+        connection.commit()
+
+
+def replace_imported_site_items(
+    connection: sqlite3.Connection,
+    items: Iterable[KnowledgeItem],
+) -> None:
+    """Atomically replace rows created by the public website importer."""
+    with connection:
+        connection.execute("DELETE FROM knowledge_items WHERE id LIKE 'xxhc-%'")
+        for item in items:
+            upsert_knowledge_item(connection, item, is_seed=False, commit=False)
+
+
+def replace_imported_document_items(
+    connection: sqlite3.Connection,
+    items: Iterable[KnowledgeItem],
+) -> None:
+    """Atomically replace rows created by the local DOCX question bank importer."""
+    with connection:
+        connection.execute("DELETE FROM knowledge_items WHERE id LIKE 'docx-%'")
+        for item in items:
+            upsert_knowledge_item(connection, item, is_seed=False, commit=False)
 
 
 def seed_default_knowledge(connection: sqlite3.Connection) -> None:
@@ -137,10 +162,21 @@ def seed_default_knowledge(connection: sqlite3.Connection) -> None:
             upsert_knowledge_item(connection, item, is_seed=True)
 
 
+def normalize_knowledge_categories(connection: sqlite3.Connection) -> None:
+    """Migrate historical labels to the compact category system used by the UI."""
+    for old_category, new_category in CATEGORY_ALIASES.items():
+        connection.execute(
+            "UPDATE knowledge_items SET category = ? WHERE category = ?",
+            (new_category, old_category),
+        )
+    connection.commit()
+
+
 def bootstrap_database(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:
     connection = connect(db_path)
     init_db(connection)
     seed_default_knowledge(connection)
+    normalize_knowledge_categories(connection)
     return connection
 
 
