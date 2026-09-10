@@ -57,3 +57,7 @@ next-env.d.ts
 **/.wrangler/
 /outputs/
 /work/
+
+# local visual QA artifacts
+/design-*.png
+/design-qa.md

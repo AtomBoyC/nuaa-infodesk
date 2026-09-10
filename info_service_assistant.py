@@ -4,6 +4,8 @@ from dataclasses import dataclass, asdict
 import re
 from typing import Iterable
 
+from knowledge_taxonomy import ordered_categories
+
 
 @dataclass(frozen=True)
 class KnowledgeItem:
@@ -423,11 +425,7 @@ QUICK_QUESTIONS = (
 
 
 def categories(items: Iterable[KnowledgeItem]) -> list[str]:
-    seen = []
-    for item in items:
-        if item.category not in seen:
-            seen.append(item.category)
-    return ["全部", *seen]
+    return ordered_categories(item.category for item in items)
 
 
 def normalize(value: str) -> str:
@@ -435,8 +433,20 @@ def normalize(value: str) -> str:
 
 
 def tokenize(query: str) -> list[str]:
-    tokens = re.split(r"[\s,，。！？?;；、/\\]+", normalize(query))
-    return [token for token in tokens if token]
+    normalized = normalize(query)
+    tokens = [token for token in re.split(r"[\s,，。！？?;；、/\\]+", normalized) if token]
+
+    # Chinese questions often arrive without spaces. Add short phrase fragments so
+    # “校外怎么访问校内资源” can still match a “校外访问校内途径” knowledge item.
+    for phrase in re.findall(r"[\u4e00-\u9fff]{2,}", normalized):
+        cleaned = re.sub(r"^(如何|怎么|请问|我要|我想|能否|可以|在)", "", phrase)
+        for length in (2, 3, 4):
+            tokens.extend(
+                cleaned[index:index + length]
+                for index in range(max(len(cleaned) - length + 1, 0))
+            )
+
+    return list(dict.fromkeys(token for token in tokens if token))
 
 
 def score_item(query: str, item: KnowledgeItem) -> int:
@@ -468,20 +478,34 @@ def score_item(query: str, item: KnowledgeItem) -> int:
     return score
 
 
+def confidence_for_score(score: int) -> int:
+    return min(96, max(42, 48 + score * 6))
+
+
+def rank_knowledge(
+    query: str,
+    items: Iterable[KnowledgeItem] = KNOWLEDGE_BASE,
+    *,
+    limit: int | None = None,
+) -> list[tuple[KnowledgeItem, int]]:
+    ranked = sorted(
+        ((item, score_item(query, item)) for item in items),
+        key=lambda entry: (entry[1], entry[0].title),
+        reverse=True,
+    )
+    return ranked if limit is None else ranked[:limit]
+
+
 def match_knowledge(
     query: str,
     items: Iterable[KnowledgeItem] = KNOWLEDGE_BASE,
 ) -> tuple[KnowledgeItem, int, list[KnowledgeItem]]:
-    ranked = sorted(
-        ((item, score_item(query, item)) for item in items),
-        key=lambda entry: entry[1],
-        reverse=True,
-    )
+    ranked = rank_knowledge(query, items)
     if not ranked:
         raise ValueError("knowledge base is empty")
 
     best_item, best_score = ranked[0]
-    confidence = min(96, max(42, 48 + best_score * 6))
+    confidence = confidence_for_score(best_score)
     related = [item for item, _score in ranked[:3]]
     return best_item, confidence, related
 

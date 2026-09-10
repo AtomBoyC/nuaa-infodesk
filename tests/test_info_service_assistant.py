@@ -1,6 +1,6 @@
 import unittest
 
-from info_service_assistant import KNOWLEDGE_BASE, build_answer, match_knowledge
+from info_service_assistant import KNOWLEDGE_BASE, KnowledgeItem, build_answer, categories, match_knowledge, rank_knowledge
 
 
 class InfoServiceAssistantTests(unittest.TestCase):
@@ -29,6 +29,58 @@ class InfoServiceAssistantTests(unittest.TestCase):
 
         self.assertIn("没有完全匹配", answer)
         self.assertIn(item.title, answer)
+
+    def test_matches_unspaced_chinese_question_to_service_phrase(self):
+        correct_item = KnowledgeItem(
+            id="remote-access",
+            title="校外访问校内途径",
+            category="网络服务",
+            audience="全校师生",
+            summary="可通过 VPN 访问校内资源。",
+            answer="使用 VPN 访问校内资源。",
+            steps=("登录 VPN。",),
+            source="测试",
+            owner="测试",
+            updated="2026-09-01",
+            tags=("校外访问", "校内资源", "VPN"),
+        )
+        unrelated_item = KnowledgeItem(
+            id="software-faq",
+            title="如何下载安装 MathType",
+            category="常见问题",
+            audience="全校师生",
+            summary="软件安装说明。",
+            answer="下载安装说明。",
+            steps=("下载软件。",),
+            source="测试",
+            owner="测试",
+            updated="2026-09-01",
+            tags=("如何", "软件"),
+        )
+
+        item, confidence, _related = match_knowledge(
+            "如何在校外访问校内资源",
+            (unrelated_item, correct_item),
+        )
+
+        self.assertEqual(item.id, "remote-access")
+        self.assertGreaterEqual(confidence, 60)
+
+    def test_orders_merged_categories_for_browsing(self):
+        items = (
+            KnowledgeItem("one", "一", "办事大厅", "", "", "", (), "", "", "", ()),
+            KnowledgeItem("two", "二", "网络服务", "", "", "", (), "", "", "", ()),
+            KnowledgeItem("three", "三", "业务系统", "", "", "", (), "", "", "", ()),
+        )
+
+        self.assertEqual(categories(items), ["全部", "网络服务", "服务大厅", "信息系统"])
+
+    def test_returns_multiple_ranked_candidates(self):
+        ranked = rank_knowledge("校园网无法连接", KNOWLEDGE_BASE, limit=5)
+
+        self.assertEqual(len(ranked), 5)
+        self.assertEqual(ranked[0][0].id, "campus-network")
+        self.assertGreater(ranked[0][1], ranked[-1][1])
 
 
 if __name__ == "__main__":
