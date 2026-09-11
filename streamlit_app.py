@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import date, datetime
+from hashlib import sha1
 from html import escape
 from pathlib import Path
 
@@ -64,6 +66,8 @@ st.markdown(
         max-width: 1520px;
     }
     .st-key-portal_header {
+        box-sizing: border-box;
+        width: 100%;
         background: var(--header);
         border: 1px solid #3b3b3b;
         border-bottom-color: #454545;
@@ -84,33 +88,50 @@ st.markdown(
         margin-top: .42rem;
         font-size: .76rem;
     }
-    .portal-nav {
-        display: flex;
-        align-items: center;
-        justify-content: space-around;
-        overflow-x: auto;
+    .st-key-portal_nav {
+        box-sizing: border-box;
+        width: 100%;
         background: #252525;
         border: 1px solid var(--line);
         border-top: 0;
         margin: 0 0 1.45rem;
-        min-height: 3.35rem;
+        padding: 0;
     }
-    .portal-nav a {
+    .st-key-portal_nav [data-testid="stHorizontalBlock"] {
+        gap: 0 !important;
+    }
+    .st-key-portal_nav [data-testid="stColumn"] {
+        border-right: 1px solid #3a3a3a;
+    }
+    .st-key-portal_nav [data-testid="stColumn"]:last-child {
+        border-right: 0;
+    }
+    .st-key-portal_nav [data-testid="stPageLink"] {
+        margin: 0;
+    }
+    .st-key-portal_nav a {
         color: #b9babc;
         text-decoration: none;
         text-align: center;
-        min-width: 8.3rem;
-        padding: 1rem 1.2rem;
-        border-right: 1px solid #3a3a3a;
+        justify-content: center;
+        width: 100%;
+        min-height: 3.35rem;
+        padding: .85rem .65rem;
         font-size: .9rem;
+        border-radius: 0;
         transition: color .15s ease, background .15s ease;
     }
-    .portal-nav a:last-child { border-right: 0; }
-    .portal-nav a:hover, .portal-nav a.active {
+    .st-key-portal_nav a:hover,
+    .st-key-portal_nav a[aria-current="page"] {
         color: #ffffff;
         background: #2c2c2c;
     }
-    .portal-nav a.active { box-shadow: inset 0 -2px 0 var(--blue); }
+    .st-key-portal_nav a[aria-current="page"] {
+        box-shadow: inset 0 -2px 0 var(--blue);
+    }
+    .st-key-portal_nav a * { color: inherit !important; }
+    .st-key-portal_nav a p { font-size: .86rem; }
+    .st-key-portal_nav button:disabled { opacity: .45; }
     .page-title {
         text-align: center;
         border-bottom: 1px solid var(--line-soft);
@@ -236,6 +257,43 @@ st.markdown(
         font-size: .76rem;
         border-radius: 2px;
     }
+    .coverage-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 3.2rem;
+        margin-bottom: .5rem;
+        padding: .65rem .8rem;
+        background: #252525;
+        border: 1px solid var(--line);
+        border-left: 2px solid #4b4b4b;
+        color: #c7c9ca;
+        font-size: .86rem;
+    }
+    .coverage-item strong { color: var(--blue); font-size: 1rem; }
+    .recent-query {
+        padding: .75rem .9rem;
+        background: #232323;
+        border-left: 3px solid var(--blue);
+        color: #d7d7d7;
+        line-height: 1.55;
+    }
+    .st-key-results_candidates {
+        background: #202020;
+        border: 1px solid var(--line);
+        margin-bottom: .6rem;
+    }
+    .st-key-results_candidates > div { padding: 0; }
+    .st-key-results_candidates div[data-testid="stRadio"] { padding: .45rem .8rem .7rem; }
+    .st-key-results_candidates div[data-testid="stRadio"] label {
+        align-items: flex-start;
+        padding: .38rem 0;
+    }
+    .st-key-results_candidates div[data-testid="stRadio"] label p {
+        color: #c8cacc !important;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+    }
     div[data-testid="stMetric"] {
         border: 1px solid var(--line);
         background: #252525;
@@ -296,14 +354,52 @@ st.markdown(
     }
     div[data-testid="stExpander"] summary:hover { color: #ffffff; }
     div[data-testid="stRadio"] label { color: #c6c6c6 !important; padding: .12rem 0; }
+    div[data-testid="stRadio"] label p { color: #c6c6c6 !important; }
     hr { border-color: var(--line) !important; }
     h1, h2, h3, p { letter-spacing: 0; }
-    [id$="-zone"] { scroll-margin-top: 1rem; }
     @media (max-width: 800px) {
         .block-container { padding: .55rem .8rem 2rem; }
         .st-key-portal_header { padding: .75rem; }
-        .portal-nav { justify-content: flex-start; }
-        .portal-nav a { min-width: 7.4rem; padding: .9rem .75rem; }
+        .st-key-portal_header [data-testid="stHorizontalBlock"] { gap: .65rem !important; }
+        .st-key-portal_nav { overflow-x: auto; }
+        .st-key-portal_nav [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 0 !important;
+            min-width: max-content;
+        }
+        .st-key-portal_nav [data-testid="stColumn"] {
+            flex: 0 0 8rem !important;
+            width: 8rem !important;
+            min-width: 8rem !important;
+        }
+        .st-key-portal_nav a { min-width: 8rem; padding: .8rem .6rem; }
+        .st-key-metrics_grid > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: .7rem !important;
+        }
+        .st-key-metrics_grid > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            flex: none !important;
+            width: auto !important;
+            min-width: 0 !important;
+        }
+        .st-key-results_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: .75rem !important;
+        }
+        .st-key-results_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            width: 100% !important;
+            min-width: 0 !important;
+        }
+        .st-key-results_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
+            order: 2;
+        }
+        .st-key-results_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {
+            order: 1;
+        }
         .page-title h1 { font-size: 1.3rem; }
         .dossier-row { grid-template-columns: 4rem minmax(0, 1fr); }
     }
@@ -317,8 +413,13 @@ DB_PATH = Path("data/info_service.db")
 
 def bootstrap_state() -> None:
     st.session_state.setdefault("chat_history", [])
-    st.session_state.setdefault("question", "校园网连不上怎么办？")
-    st.session_state.setdefault("pending_question", "")
+    st.session_state.setdefault("question", "")
+    st.session_state.setdefault("search_input", st.session_state.question)
+    st.session_state.setdefault("selected_candidate_id", "")
+    st.session_state.setdefault("pending_search_input", "")
+    if st.session_state.pending_search_input:
+        st.session_state.search_input = st.session_state.pending_search_input
+        st.session_state.pending_search_input = ""
 
 
 def all_knowledge() -> list[KnowledgeItem]:
@@ -352,157 +453,181 @@ def ask_question(question: str) -> tuple[KnowledgeItem, int, list[KnowledgeItem]
     return item, confidence, related
 
 
-def choose_quick_question(question: str) -> None:
-    st.session_state.question = question
-    st.session_state.pending_question = question
-
-
-def choose_match_candidate(widget_key: str) -> None:
-    st.session_state.selected_candidate_id = st.session_state[widget_key]
-
-
 def export_knowledge_json() -> str:
     payload = [item.to_dict() for item in all_knowledge()]
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-bootstrap_state()
-db = get_db()
-knowledge_items = all_knowledge()
-feedback = feedback_summary(db)
-
-with st.container(key="portal_header"):
-    brand_column, search_column = st.columns([1.15, 4.85], gap="large", vertical_alignment="center")
-    with brand_column:
-        st.markdown(
-            """
-            <div class="brand-lockup">
-              <div class="brand-name">NUAA <span>InfoDesk</span></div>
-              <div class="brand-sub">信息化处知识服务门户</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with search_column:
-        with st.form("question_form", clear_on_submit=False, border=False):
-            search_input, search_action = st.columns([7.4, 1], gap="small", vertical_alignment="bottom")
-            user_question = search_input.text_input(
-                "请输入信息化服务问题",
-                key="question",
-                placeholder="搜索校园网、统一身份认证、VPN、邮箱、办事大厅等服务",
-                label_visibility="collapsed",
-            )
-            submitted = search_action.form_submit_button(
-                "搜索",
-                type="primary",
-                icon=":material/search:",
-                use_container_width=True,
-            )
-
-    if submitted and user_question.strip():
-        ask_question(user_question.strip())
-    elif st.session_state.pending_question:
-        ask_question(st.session_state.pending_question)
-        st.session_state.pending_question = ""
-
-    ranked_candidates = rank_knowledge(
-        st.session_state.question,
-        all_knowledge(),
-        limit=10,
-    )
-    candidate_by_id = {item.id: (item, score) for item, score in ranked_candidates}
-    candidate_id = st.session_state.get("selected_candidate_id")
-    if candidate_id not in candidate_by_id:
-        candidate_id = next(iter(candidate_by_id))
-        st.session_state.selected_candidate_id = candidate_id
-
-    candidate_column, quick_column = st.columns([1.6, 1], gap="small")
-    candidate_widget_key = f"candidate-choice-{st.session_state.question}"
-    with candidate_column.expander(f"相关匹配结果（{len(ranked_candidates)} 条）", expanded=False):
-        st.radio(
-            "匹配条目",
-            list(candidate_by_id),
-            index=list(candidate_by_id).index(candidate_id),
-            key=candidate_widget_key,
-            format_func=lambda item_id: (
-                f"{candidate_by_id[item_id][0].title}"
-                f" · {candidate_by_id[item_id][0].category}"
-                f" · {confidence_for_score(candidate_by_id[item_id][1])}%"
-            ),
-            on_change=choose_match_candidate,
-            args=(candidate_widget_key,),
-        )
-    with quick_column.expander("常用问题", expanded=False):
-        quick_columns = st.columns(2)
-        for index, question in enumerate(QUICK_QUESTIONS):
-            quick_columns[index % 2].button(
-                question,
-                key=f"quick-question-{index}",
-                use_container_width=True,
-                on_click=choose_quick_question,
-                args=(question,),
-            )
-
-st.markdown(
-    """
-    <nav class="portal-nav" aria-label="页面导航">
-      <a class="active" href="#answer-zone">智能问答</a>
-      <a href="#directory-zone">知识目录</a>
-      <a href="#quick-zone">常用服务</a>
-      <a href="#history-zone">最近会话</a>
-      <a href="#maintenance-zone">知识维护</a>
-    </nav>
-    """,
-    unsafe_allow_html=True,
-)
-
-preview_item, preview_score = candidate_by_id[candidate_id]
-preview_confidence = confidence_for_score(preview_score)
-answer = build_answer(st.session_state.question, preview_item, preview_confidence)
-
-safe_question = escape(st.session_state.question)
-safe_title = escape(preview_item.title)
-safe_category = escape(preview_item.category)
-safe_answer = escape(answer).replace("\n", "<br>")
-safe_source = escape(preview_item.source)
-safe_owner = escape(preview_item.owner)
-safe_audience = escape(preview_item.audience)
-safe_updated = escape(preview_item.updated)
-
-st.markdown(
-    f"""
-    <div id="answer-zone" class="page-title">
-      <h1>{safe_question} <span>| 智能答复</span></h1>
-      <p>当前匹配：{safe_title}</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-metric_1, metric_2, metric_3, metric_4 = st.columns(4)
-metric_1.metric("匹配度", f"{preview_confidence}%")
-metric_2.metric("知识条目", len(knowledge_items))
-metric_3.metric("服务分类", len(categories(knowledge_items)) - 1)
-metric_4.metric("反馈总数", feedback["helpful"] + feedback["manual"])
-
-answer_left, answer_right = st.columns([0.78, 2.55], gap="small")
-with answer_left:
+def render_page_title(title: str, accent: str, subtitle: str = "") -> None:
+    subtitle_html = f"<p>{escape(subtitle)}</p>" if subtitle else ""
     st.markdown(
         f"""
-        <div class="service-dossier">
-          <div class="panel-head">服务档案</div>
-          <div class="dossier-row"><span class="label">分类</span><span class="value">{safe_category}</span></div>
-          <div class="dossier-row"><span class="label">适用对象</span><span class="value">{safe_audience}</span></div>
-          <div class="dossier-row"><span class="label">责任岗位</span><span class="value">{safe_owner}</span></div>
-          <div class="dossier-row"><span class="label">知识来源</span><span class="value">{safe_source}</span></div>
-          <div class="dossier-row"><span class="label">更新时间</span><span class="value">{safe_updated}</span></div>
-          <div class="dossier-row"><span class="label">匹配度</span><span class="value confidence-value">{preview_confidence}%</span></div>
+        <div class="page-title">
+          <h1>{escape(title)} <span>| {escape(accent)}</span></h1>
+          {subtitle_html}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-with answer_right:
+
+def render_section_heading(title: str, detail: str) -> None:
+    st.markdown(
+        f"""
+        <div class="section-heading">
+          <h2>{escape(title)}</h2><span>{escape(detail)}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def prepare_result(question: str, *, record_history: bool = True) -> None:
+    cleaned = question.strip()
+    if not cleaned:
+        return
+    st.session_state.question = cleaned
+    st.session_state.pending_search_input = cleaned
+    if record_history:
+        ask_question(cleaned)
+    else:
+        item, _, _ = match_knowledge(cleaned, all_knowledge())
+        st.session_state.selected_candidate_id = item.id
+    st.switch_page(RESULTS_PAGE)
+
+
+def render_portal_header() -> None:
+    with st.container(key="portal_header"):
+        brand_column, search_column = st.columns(
+            [1.15, 4.85], gap="large", vertical_alignment="center"
+        )
+        with brand_column:
+            st.markdown(
+                """
+                <div class="brand-lockup">
+                  <div class="brand-name">NUAA <span>InfoDesk</span></div>
+                  <div class="brand-sub">信息化处知识服务门户</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with search_column:
+            with st.form("global_question_form", clear_on_submit=False, border=False):
+                search_input, search_action = st.columns(
+                    [7.4, 1], gap="small", vertical_alignment="bottom"
+                )
+                user_question = search_input.text_input(
+                    "请输入信息化服务问题",
+                    key="search_input",
+                    placeholder="搜索校园网、统一身份认证、VPN、邮箱、办事大厅等服务",
+                    label_visibility="collapsed",
+                )
+                submitted = search_action.form_submit_button(
+                    "搜索",
+                    type="primary",
+                    icon=":material/search:",
+                    use_container_width=True,
+                )
+        if submitted:
+            prepare_result(user_question)
+
+
+def render_portal_navigation() -> None:
+    navigation = (
+        (HOME_PAGE, "智能问答", ":material/home:", False),
+        (RESULTS_PAGE, "匹配结果", ":material/search_check:", not st.session_state.question),
+        (DIRECTORY_PAGE, "知识目录", ":material/menu_book:", False),
+        (SERVICES_PAGE, "常用服务", ":material/apps:", False),
+        (HISTORY_PAGE, "最近会话", ":material/history:", False),
+        (MAINTENANCE_PAGE, "知识维护", ":material/database:", False),
+    )
+    with st.container(key="portal_nav"):
+        columns = st.columns(len(navigation), gap="small")
+        for column, (page, label, icon, disabled) in zip(columns, navigation):
+            column.page_link(
+                page,
+                label=label,
+                icon=icon,
+                disabled=disabled,
+                use_container_width=True,
+            )
+
+
+def render_metrics(
+    knowledge_items: list[KnowledgeItem],
+    *,
+    match_confidence: int | None = None,
+) -> None:
+    feedback = feedback_summary(get_db())
+    with st.container(key="metrics_grid"):
+        metric_1, metric_2, metric_3, metric_4 = st.columns(4)
+        if match_confidence is None:
+            metric_1.metric("知识状态", "正常")
+        else:
+            metric_1.metric("匹配度", f"{match_confidence}%")
+        metric_2.metric("知识条目", len(knowledge_items))
+        metric_3.metric("服务分类", len(categories(knowledge_items)) - 1)
+        metric_4.metric("反馈总数", feedback["helpful"] + feedback["manual"])
+
+
+def render_home_page() -> None:
+    knowledge_items = all_knowledge()
+    render_page_title(
+        "信息化服务智能问答",
+        "服务总览",
+        "NUAA InfoDesk 校内知识库",
+    )
+    render_metrics(knowledge_items)
+
+    category_counts = Counter(item.category for item in knowledge_items)
+    render_section_heading("知识覆盖", f"{len(category_counts)} 个服务分类")
+    category_columns = st.columns(3, gap="small")
+    for index, (category, count) in enumerate(
+        sorted(category_counts.items(), key=lambda entry: (-entry[1], entry[0]))
+    ):
+        category_columns[index % 3].markdown(
+            f"""
+            <div class="coverage-item">
+              <span>{escape(category)}</span><strong>{count}</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    if st.session_state.question:
+        render_section_heading("最近查询", "最近一次搜索")
+        recent_label, recent_action = st.columns([4.8, 1.2], vertical_alignment="center")
+        recent_label.markdown(
+            f"<div class='recent-query'>{escape(st.session_state.question)}</div>",
+            unsafe_allow_html=True,
+        )
+        recent_action.page_link(
+            RESULTS_PAGE,
+            label="查看答复",
+            icon=":material/arrow_forward:",
+            use_container_width=True,
+        )
+
+
+def result_candidates(question: str) -> tuple[dict[str, tuple[KnowledgeItem, int]], str]:
+    ranked = rank_knowledge(question, all_knowledge(), limit=10)
+    candidate_by_id = {item.id: (item, score) for item, score in ranked}
+    candidate_id = st.session_state.selected_candidate_id
+    if candidate_id not in candidate_by_id:
+        candidate_id = next(iter(candidate_by_id))
+        st.session_state.selected_candidate_id = candidate_id
+    return candidate_by_id, candidate_id
+
+
+def candidate_label(item: KnowledgeItem, score: int) -> str:
+    title = item.title.replace("https://", "https：//").replace("http://", "http：//")
+    return f"{title} · {item.category} · {confidence_for_score(score)}%"
+
+
+def render_answer_panel(item: KnowledgeItem, question: str, confidence: int) -> None:
+    answer = build_answer(question, item, confidence)
+    safe_title = escape(item.title)
+    safe_answer = escape(answer).replace("\n", "<br>")
     st.markdown(
         f"""
         <div class="answer-box">
@@ -516,131 +641,235 @@ with answer_right:
     step_rows = "".join(
         f"<div class='step-row'><span class='step-number'>{index:02d}</span>"
         f"<span>{escape(step)}</span></div>"
-        for index, step in enumerate(preview_item.steps, start=1)
+        for index, step in enumerate(item.steps, start=1)
     )
     st.markdown(
         f"<div class='step-list'><div class='panel-head'>办理步骤</div>{step_rows}</div>",
         unsafe_allow_html=True,
     )
 
-source_action, helpful_action, manual_action, action_spacer = st.columns([1.15, 1, 1.15, 3.4], gap="small")
-if preview_item.link:
-    source_action.link_button(
-        "查看来源",
-        preview_item.link,
-        icon=":material/open_in_new:",
-        use_container_width=True,
-    )
-else:
-    source_action.button("暂无来源链接", disabled=True, use_container_width=True)
-if helpful_action.button("有帮助", icon=":material/thumb_up:", use_container_width=True):
-    record_feedback(
-        db,
-        "helpful",
-        question=st.session_state.question,
-        knowledge_item_id=preview_item.id,
-    )
-    st.toast("已记录：有帮助")
-    st.rerun()
-if manual_action.button("人工跟进", icon=":material/support_agent:", use_container_width=True):
-    record_feedback(
-        db,
-        "manual",
-        question=st.session_state.question,
-        knowledge_item_id=preview_item.id,
-    )
-    st.toast("已记录：需人工跟进")
-    st.rerun()
 
-st.markdown(
-    """
-    <div id="directory-zone" class="section-heading">
-      <h2>知识目录</h2><span>按服务分类浏览数据库条目</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-directory_filter, directory_content = st.columns([0.92, 2.4], gap="small")
-with directory_filter:
-    category = st.selectbox("服务分类", categories(knowledge_items), index=0)
-    filtered = [
-        item for item in knowledge_items
-        if category == "全部" or item.category == category
-    ]
-    selected_id = st.selectbox(
-        "知识条目",
-        [item.id for item in filtered],
-        index=0,
-        format_func=lambda item_id: next(item.title for item in filtered if item.id == item_id),
-    )
-    selected_item = next(item for item in filtered if item.id == selected_id)
-
-with directory_content:
-    selected_pills = " ".join(
-        f"<span class='source-pill'>{escape(tag)}</span>" for tag in selected_item.tags[:7]
-    )
+def render_service_dossier(item: KnowledgeItem, confidence: int) -> None:
     st.markdown(
         f"""
-        <div class="directory-preview">
-          <h3>{escape(selected_item.title)}</h3>
-          <p>{escape(selected_item.summary)}</p>
-          <div>{selected_pills}</div>
-          <div class="directory-meta">来源：{escape(selected_item.source)} · 责任岗：{escape(selected_item.owner)}</div>
+        <div class="service-dossier">
+          <div class="panel-head">服务档案</div>
+          <div class="dossier-row"><span class="label">分类</span><span class="value">{escape(item.category)}</span></div>
+          <div class="dossier-row"><span class="label">适用对象</span><span class="value">{escape(item.audience)}</span></div>
+          <div class="dossier-row"><span class="label">责任岗位</span><span class="value">{escape(item.owner)}</span></div>
+          <div class="dossier-row"><span class="label">知识来源</span><span class="value">{escape(item.source)}</span></div>
+          <div class="dossier-row"><span class="label">更新时间</span><span class="value">{escape(item.updated)}</span></div>
+          <div class="dossier-row"><span class="label">匹配度</span><span class="value confidence-value">{confidence}%</span></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-st.markdown(
-    """
-    <div id="quick-zone" class="section-heading">
-      <h2>常用服务</h2><span>一键发起高频问题</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-service_columns = st.columns(3, gap="small")
-for index, question in enumerate(QUICK_QUESTIONS):
-    service_columns[index % 3].button(
-        question,
-        key=f"service-question-{index}",
-        use_container_width=True,
-        on_click=choose_quick_question,
-        args=(question,),
+
+def render_feedback_actions(item: KnowledgeItem, question: str) -> None:
+    source_action, helpful_action, manual_action, action_spacer = st.columns(
+        [1.15, 1, 1.15, 3.4], gap="small"
+    )
+    if item.link:
+        source_action.link_button(
+            "查看来源",
+            item.link,
+            icon=":material/open_in_new:",
+            use_container_width=True,
+        )
+    else:
+        source_action.button("暂无来源链接", disabled=True, use_container_width=True)
+    if helpful_action.button(
+        "有帮助", icon=":material/thumb_up:", use_container_width=True
+    ):
+        record_feedback(get_db(), "helpful", question=question, knowledge_item_id=item.id)
+        st.toast("已记录：有帮助")
+        st.rerun()
+    if manual_action.button(
+        "人工跟进", icon=":material/support_agent:", use_container_width=True
+    ):
+        record_feedback(get_db(), "manual", question=question, knowledge_item_id=item.id)
+        st.toast("已记录：需人工跟进")
+        st.rerun()
+
+
+def render_results_page() -> None:
+    question = st.session_state.question.strip()
+    if not question:
+        render_page_title("匹配结果", "暂无查询", "等待新的信息化服务问题")
+        st.info("当前没有可展示的搜索结果。")
+        st.page_link(
+            HOME_PAGE,
+            label="返回智能问答",
+            icon=":material/arrow_back:",
+        )
+        return
+
+    knowledge_items = all_knowledge()
+    candidate_by_id, candidate_id = result_candidates(question)
+    widget_key = f"result_candidate_{sha1(question.encode('utf-8')).hexdigest()[:12]}"
+    if (
+        widget_key not in st.session_state
+        or st.session_state[widget_key] not in candidate_by_id
+    ):
+        st.session_state[widget_key] = candidate_id
+    candidate_id = st.session_state[widget_key]
+    st.session_state.selected_candidate_id = candidate_id
+    preview_item, preview_score = candidate_by_id[candidate_id]
+    preview_confidence = confidence_for_score(preview_score)
+
+    render_page_title(question, "匹配结果", f"当前匹配：{preview_item.title}")
+    render_metrics(knowledge_items, match_confidence=preview_confidence)
+
+    with st.container(key="results_layout"):
+        candidate_column, answer_column = st.columns([1.02, 2.35], gap="small")
+        with candidate_column:
+            with st.container(key="results_candidates"):
+                st.markdown(
+                    f"<div class='panel-head'>候选知识 · {len(candidate_by_id)} 条</div>",
+                    unsafe_allow_html=True,
+                )
+                selected_id = st.radio(
+                    "匹配条目",
+                    list(candidate_by_id),
+                    key=widget_key,
+                    format_func=lambda item_id: candidate_label(*candidate_by_id[item_id]),
+                    label_visibility="collapsed",
+                )
+                st.session_state.selected_candidate_id = selected_id
+
+        with answer_column:
+            selected_item, selected_score = candidate_by_id[selected_id]
+            selected_confidence = confidence_for_score(selected_score)
+            render_answer_panel(selected_item, question, selected_confidence)
+            render_service_dossier(selected_item, selected_confidence)
+            render_feedback_actions(selected_item, question)
+
+
+def render_directory_page() -> None:
+    knowledge_items = all_knowledge()
+    render_page_title(
+        "知识目录",
+        "分类浏览",
+        f"当前收录 {len(knowledge_items)} 条知识",
     )
 
-st.markdown(
-    """
-    <div id="history-zone" class="section-heading">
-      <h2>最近会话</h2><span>保留最近 5 次问答</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-if not st.session_state.chat_history:
-    st.caption("搜索问题后，这里会显示最近的问答记录。")
-for message in st.session_state.chat_history:
-    with st.expander(message["question"]):
-        st.write(message["answer"])
-        st.caption(
-            f"{message['matched_title']} · {message['confidence']}% · {message['source']}"
-        )
+    filter_column, search_column = st.columns([1, 2.3], gap="small")
+    category = filter_column.selectbox("服务分类", categories(knowledge_items), index=0)
+    directory_query = search_column.text_input(
+        "目录内检索",
+        placeholder="按问题、关键词或服务名称筛选",
+        icon=":material/filter_alt:",
+    )
+    filtered = [
+        item
+        for item in knowledge_items
+        if category == "全部" or item.category == category
+    ]
+    if directory_query.strip():
+        filtered = [
+            item
+            for item, score in rank_knowledge(directory_query, filtered)
+            if score > 0
+        ]
 
-st.markdown(
-    """
-    <div id="maintenance-zone" class="section-heading">
-      <h2>知识维护</h2><span>新增本地草稿与数据导出</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-with st.expander("新增知识草稿", expanded=False):
+    render_section_heading("目录结果", f"{len(filtered)} 条")
+    if not filtered:
+        st.info("当前筛选条件下没有知识条目。")
+        return
+
+    directory_filter, directory_content = st.columns([1.02, 2.35], gap="small")
+    with directory_filter:
+        selected_id = st.selectbox(
+            "知识条目",
+            [item.id for item in filtered],
+            index=0,
+            format_func=lambda item_id: next(
+                item.title for item in filtered if item.id == item_id
+            ),
+        )
+        selected_item = next(item for item in filtered if item.id == selected_id)
+        st.caption(f"{selected_item.category} · {selected_item.updated}")
+    with directory_content:
+        selected_pills = " ".join(
+            f"<span class='source-pill'>{escape(tag)}</span>"
+            for tag in selected_item.tags[:7]
+        )
+        st.markdown(
+            f"""
+            <div class="directory-preview">
+              <h3>{escape(selected_item.title)}</h3>
+              <p>{escape(selected_item.answer).replace(chr(10), '<br>')}</p>
+              <div>{selected_pills}</div>
+              <div class="directory-meta">来源：{escape(selected_item.source)} · 责任岗：{escape(selected_item.owner)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if selected_item.link:
+            st.link_button(
+                "查看来源",
+                selected_item.link,
+                icon=":material/open_in_new:",
+            )
+
+
+def render_services_page() -> None:
+    render_page_title("常用服务", "高频入口", f"{len(QUICK_QUESTIONS)} 项常用问题")
+    render_section_heading("服务列表", "点击后打开独立匹配结果页")
+    service_columns = st.columns(2, gap="small")
+    for index, question in enumerate(QUICK_QUESTIONS):
+        if service_columns[index % 2].button(
+            question,
+            key=f"service_question_{index}",
+            icon=":material/arrow_forward:",
+            use_container_width=True,
+        ):
+            prepare_result(question)
+
+
+def render_history_page() -> None:
+    history = st.session_state.chat_history
+    render_page_title("最近会话", "查询记录", f"当前保留 {len(history)} 条")
+    if not history:
+        st.info("当前会话还没有搜索记录。")
+        return
+    for index, message in enumerate(history):
+        with st.expander(message["question"], expanded=index == 0):
+            st.write(message["answer"])
+            st.caption(
+                f"{message['matched_title']} · {message['confidence']}% · {message['source']}"
+            )
+            if st.button(
+                "重新查看",
+                key=f"reopen_history_{index}",
+                icon=":material/open_in_new:",
+            ):
+                prepare_result(message["question"], record_history=False)
+
+
+def render_maintenance_page() -> None:
+    knowledge_items = all_knowledge()
+    custom_count = sum(item.id.startswith("custom-") for item in knowledge_items)
+    render_page_title(
+        "知识维护",
+        "本地管理",
+        "新增草稿与导出 SQLite 知识数据",
+    )
+    metric_1, metric_2, metric_3 = st.columns(3)
+    metric_1.metric("全部知识", len(knowledge_items))
+    metric_2.metric("本地草稿", custom_count)
+    metric_3.metric("数据格式", "SQLite")
+
+    render_section_heading("新增知识草稿", "写入本地数据库")
     with st.form("knowledge_form", clear_on_submit=True):
-        title_column, category_column, tag_column = st.columns([1.5, 1, 1.5], gap="small")
+        title_column, category_column, tag_column = st.columns(
+            [1.5, 1, 1.5], gap="small"
+        )
         title = title_column.text_input("新增问题标题")
         category_input = category_column.text_input("分类", value="临时知识")
         tags_input = tag_column.text_input("关键词，用逗号分隔")
-        answer_input = st.text_area("标准答案", height=120)
+        answer_input = st.text_area("标准答案", height=160)
         save_item = st.form_submit_button(
             "保存草稿",
             type="primary",
@@ -648,31 +877,92 @@ with st.expander("新增知识草稿", expanded=False):
             use_container_width=True,
         )
 
-if save_item and title.strip() and answer_input.strip():
-    tags = tuple(tag.strip() for tag in tags_input.replace("，", ",").split(",") if tag.strip())
-    new_item = KnowledgeItem(
-        id=f"custom-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
-        title=title.strip(),
-        category=category_input.strip() or "临时知识",
-        audience="内部维护",
-        summary=answer_input.strip()[:48],
-        answer=answer_input.strip(),
-        steps=("由维护人员审核后发布到正式知识库。",),
-        source="本地维护草稿",
-        owner="知识库管理员",
-        updated=date.today().isoformat(),
-        tags=tags or (title.strip(),),
-    )
-    add_knowledge_item(db, new_item)
-    st.success("草稿已保存到 SQLite 数据库。")
-    st.rerun()
+    if save_item and title.strip() and answer_input.strip():
+        tags = tuple(
+            tag.strip()
+            for tag in tags_input.replace("，", ",").split(",")
+            if tag.strip()
+        )
+        new_item = KnowledgeItem(
+            id=f"custom-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+            title=title.strip(),
+            category=category_input.strip() or "临时知识",
+            audience="内部维护",
+            summary=answer_input.strip()[:48],
+            answer=answer_input.strip(),
+            steps=("由维护人员审核后发布到正式知识库。",),
+            source="本地维护草稿",
+            owner="知识库管理员",
+            updated=date.today().isoformat(),
+            tags=tags or (title.strip(),),
+        )
+        add_knowledge_item(get_db(), new_item)
+        st.success("草稿已保存到 SQLite 数据库。")
+        st.rerun()
 
-export_column, export_spacer = st.columns([1.2, 4.8])
-export_column.download_button(
-    "导出知识库 JSON",
-    data=export_knowledge_json(),
-    file_name="information_service_knowledge.json",
-    mime="application/json",
-    icon=":material/download:",
-    use_container_width=True,
+    render_section_heading("数据导出", "JSON 交换格式")
+    export_column, export_spacer = st.columns([1.2, 4.8])
+    export_column.download_button(
+        "导出知识库 JSON",
+        data=export_knowledge_json(),
+        file_name="information_service_knowledge.json",
+        mime="application/json",
+        icon=":material/download:",
+        use_container_width=True,
+    )
+
+
+bootstrap_state()
+HOME_PAGE = st.Page(
+    render_home_page,
+    title="智能问答",
+    icon=":material/home:",
+    url_path="",
+    default=True,
 )
+RESULTS_PAGE = st.Page(
+    render_results_page,
+    title="匹配结果",
+    icon=":material/search_check:",
+    url_path="search-results",
+    visibility="hidden",
+)
+DIRECTORY_PAGE = st.Page(
+    render_directory_page,
+    title="知识目录",
+    icon=":material/menu_book:",
+    url_path="knowledge-directory",
+)
+SERVICES_PAGE = st.Page(
+    render_services_page,
+    title="常用服务",
+    icon=":material/apps:",
+    url_path="common-services",
+)
+HISTORY_PAGE = st.Page(
+    render_history_page,
+    title="最近会话",
+    icon=":material/history:",
+    url_path="recent-history",
+)
+MAINTENANCE_PAGE = st.Page(
+    render_maintenance_page,
+    title="知识维护",
+    icon=":material/database:",
+    url_path="knowledge-maintenance",
+)
+
+current_page = st.navigation(
+    [
+        HOME_PAGE,
+        RESULTS_PAGE,
+        DIRECTORY_PAGE,
+        SERVICES_PAGE,
+        HISTORY_PAGE,
+        MAINTENANCE_PAGE,
+    ],
+    position="hidden",
+)
+render_portal_header()
+render_portal_navigation()
+current_page.run()

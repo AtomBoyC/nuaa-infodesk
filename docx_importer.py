@@ -9,16 +9,19 @@ from hashlib import sha1
 from pathlib import Path
 import re
 from typing import Iterable
+import unicodedata
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
 from database import DEFAULT_DB_PATH, bootstrap_database, replace_imported_document_items
 from info_service_assistant import KnowledgeItem
+from knowledge_taxonomy import canonical_category
 
 
 WORD_NAMESPACE = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 QUESTION_PREFIX = re.compile(r"^问\s*[：:]+\s*")
 ANSWER_PREFIX = re.compile(r"^答\s*[：:;；]+\s*")
+DOCUMENT_YEAR = re.compile(r"(?:19|20)\d{2}")
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,44 @@ class QuestionAnswer:
 
 def compact_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def normalize_question(value: str) -> str:
+    """Build a stable key so cosmetic punctuation and spacing do not create duplicates."""
+    normalized = unicodedata.normalize("NFKC", compact_text(value)).casefold()
+    return re.sub(r"[\W_]+", "", normalized, flags=re.UNICODE)
+
+
+def document_version(path: Path) -> int:
+    years = [int(value) for value in DOCUMENT_YEAR.findall(path.name)]
+    return max(years, default=0)
+
+
+def deduplicate_document_entries(
+    documents: Iterable[tuple[Path, Iterable[QuestionAnswer]]],
+) -> list[tuple[Path, QuestionAnswer]]:
+    """Merge repeated questions, preferring newer named editions and then later inputs."""
+    selected: dict[
+        str,
+        tuple[tuple[int, int], int, Path, QuestionAnswer],
+    ] = {}
+    next_position = 0
+
+    for source_order, (path, entries) in enumerate(documents):
+        priority = (document_version(path), source_order)
+        for entry in entries:
+            key = normalize_question(entry.question)
+            current = selected.get(key)
+            if current is None:
+                selected[key] = (priority, next_position, path, entry)
+                next_position += 1
+            elif priority >= current[0]:
+                selected[key] = (priority, current[1], path, entry)
+
+    return [
+        (path, entry)
+        for _, _, path, entry in sorted(selected.values(), key=lambda value: value[1])
+    ]
 
 
 def read_docx_paragraphs(path: Path) -> list[str]:
@@ -98,8 +139,8 @@ def classify_question(question: str, source_name: str) -> str:
     )
     for category, keywords in rules:
         if any(keyword in text for keyword in keywords):
-            return category
-    return "信息系统服务"
+            return canonical_category(category)
+    return canonical_category("信息系统服务")
 
 
 def question_tags(question: str, category: str, source_name: str) -> tuple[str, ...]:
@@ -137,14 +178,19 @@ def entries_to_items(entries: Iterable[QuestionAnswer], source_path: Path) -> li
 
 
 def import_documents(paths: Iterable[Path], db_path: Path | str, *, dry_run: bool = False) -> list[KnowledgeItem]:
-    all_items: list[KnowledgeItem] = []
+    documents: list[tuple[Path, list[QuestionAnswer]]] = []
     for path in paths:
         if not path.is_file():
             raise FileNotFoundError(f"document not found: {path}")
         entries = parse_question_answers(read_docx_paragraphs(path))
         if len(entries) < 5:
             raise ValueError(f"only {len(entries)} Q&A entries found in {path.name}; import aborted")
-        all_items.extend(entries_to_items(entries, path))
+        documents.append((path, entries))
+
+    all_items = [
+        entries_to_items((entry,), source_path)[0]
+        for source_path, entry in deduplicate_document_entries(documents)
+    ]
 
     if not dry_run:
         connection = bootstrap_database(db_path)
