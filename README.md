@@ -74,6 +74,8 @@ http://localhost:8501/
 
 ## Docker Compose 部署
 
+首次从 GitHub 下载并解压到 Linux 服务器，请按 [Linux 服务器部署操作指南](docs/linux-github-deployment.md) 操作。包含私有仓库授权、Ubuntu 环境准备、SSH 隧道、HTTPS、更新和备份。
+
 ```bash
 python3 deploy/setup.py
 docker compose up -d --build --wait --wait-timeout 180
