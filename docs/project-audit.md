@@ -34,7 +34,7 @@
 - 旧库字段迁移、草稿发布、预览不写库、嵌套正文解析、相对链接、空 Word 导入均有回归覆盖。
 - Streamlit 服务在 `http://localhost:8501/` 启动，健康检查返回 `ok`。
 - 本轮没有重新做浏览器像素截图比对；没有宣称完成跨浏览器视觉验收。
-- GitHub Actions 尚未实际运行，需推送新配置后验证；本机测试环境为 Python 3.12，CI 配置覆盖 Python 3.10 和 3.12。
+- GitHub Actions 的 Python 3.10 和 3.12 检查均已通过；本机测试环境为 Python 3.12。
 
 ## Git 同步现状
 
@@ -57,4 +57,6 @@ Docker Compose 版本提交时，已先确认这两个旧版本的文件树完�
 
 已增加 Dockerfile、基础 Compose、可选 Caddy HTTPS 配置、首次部署初始化、在线数据库备份、部署打包工具及部署说明。知识维护使用密码文件登录；密码错误、配置缺失和密码更换后的会话失效均有回归测试。
 
-本机 Python 测试累计 44 项通过，Compose 文件通过 YAML 语法解析。当前电脑未安装 Docker，因此尚未执行镜像构建、Compose 容器启动或卷重建测试；GitHub Docker workflow 已配置对应检查，需实际运行后确认。未获取服务器 SSH 地址，尚未连接或修改远程服务器。
+本机 Python 测试累计 44 项通过。部署版本 `4d8b6cb` 已在 GitHub Actions 的 Linux 环境实际通过以下检查：Compose 基础及 HTTPS 组合配置解析、Docker 镜像构建、容器健康启动、管理员密码文件读取、数据库检查与在线备份、强制重建容器后数据仍保留。
+
+验证结果：[Docker Deployment Checks](https://github.com/AtomBoyC/nuaa-infodesk/actions/runs/39592752212)、[Python Checks](https://github.com/AtomBoyC/nuaa-infodesk/actions/runs/39592752090)。当前电脑未安装 Docker，因此容器验收由上述 GitHub runner 执行。服务器域名、证书申请和云安全组仍需在实际部署环境检查；本次没有连接或修改用户服务器。
