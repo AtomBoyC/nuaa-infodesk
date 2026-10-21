@@ -1,7 +1,10 @@
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from info_service_assistant import KnowledgeItem
-from site_importer import Page, PageParser, classify_page, deduplicate_items, normalized_url, page_to_knowledge_item
+from site_importer import Page, PageParser, classify_page, crawl_public_pages, deduplicate_items, import_site, normalized_url, page_to_knowledge_item
 
 
 class SiteImporterTests(unittest.TestCase):
@@ -67,6 +70,45 @@ class SiteImporterTests(unittest.TestCase):
         items = deduplicate_items((short, detailed))
 
         self.assertEqual([item.id for item in items], ["two"])
+
+    def test_nested_article_divs_do_not_truncate_following_paragraphs(self):
+        parser = PageParser()
+        parser.feed(
+            "<div class='wp_articlecontent'><div>第一项说明。</div>"
+            "<p>第二项说明。<br/>第三项说明。</p></div><p>正文外的页脚。</p>"
+        )
+        self.assertEqual(parser.article_text, "第一项说明。\n第二项说明。\n第三项说明。")
+
+    def test_dry_run_does_not_create_or_modify_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "knowledge.db"
+            with patch("site_importer.crawl_public_pages", return_value=[]):
+                import_site("https://xxhc.nuaa.edu.cn/", str(path), 3, 0, True, 50)
+                self.assertFalse(path.exists())
+                path.write_bytes(b"existing database is untouched")
+                import_site("https://xxhc.nuaa.edu.cn/", str(path), 3, 0, True, 50)
+                self.assertEqual(path.read_bytes(), b"existing database is untouched")
+
+    def test_failed_crawl_does_not_create_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "knowledge.db"
+            with patch("site_importer.crawl_public_pages", return_value=[]):
+                with self.assertRaises(RuntimeError):
+                    import_site("https://xxhc.nuaa.edu.cn/", str(path), 3, 0, False, 50)
+            self.assertFalse(path.exists())
+
+    def test_crawl_resolves_relative_links_against_current_page(self):
+        base = "https://xxhc.nuaa.edu.cn/"
+        urls = []
+
+        def fetch(url):
+            urls.append(url)
+            links = ("/service/start.htm",) if url == base else ("next.htm",)
+            return Page(url, "页面", "正文", links)
+
+        with patch("site_importer.fetch_page", side_effect=fetch):
+            list(crawl_public_pages(base, 3, 0))
+        self.assertEqual(urls[-1], "https://xxhc.nuaa.edu.cn/service/next.htm")
 
 
 if __name__ == "__main__":

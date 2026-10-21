@@ -8,7 +8,7 @@ from info_service_assistant import KNOWLEDGE_BASE, KnowledgeItem
 from knowledge_taxonomy import CATEGORY_ALIASES, canonical_category
 
 
-DEFAULT_DB_PATH = Path("data/info_service.db")
+DEFAULT_DB_PATH = Path(__file__).resolve().parent / "data" / "info_service.db"
 
 
 def connect(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:
@@ -36,6 +36,7 @@ def init_db(connection: sqlite3.Connection) -> None:
             tags TEXT NOT NULL,
             link TEXT NOT NULL DEFAULT '',
             is_seed INTEGER NOT NULL DEFAULT 0,
+            is_published INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -54,6 +55,14 @@ def init_db(connection: sqlite3.Connection) -> None:
             ON feedback_events(feedback_type);
         """
     )
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(knowledge_items)")}
+    if "is_published" not in columns:
+        connection.execute(
+            "ALTER TABLE knowledge_items ADD COLUMN is_published INTEGER NOT NULL DEFAULT 1"
+        )
+        connection.execute(
+            "UPDATE knowledge_items SET is_published = 0 WHERE id LIKE 'custom-%'"
+        )
     connection.commit()
 
 
@@ -87,15 +96,16 @@ def upsert_knowledge_item(
     item: KnowledgeItem,
     *,
     is_seed: bool = False,
+    is_published: bool = True,
     commit: bool = True,
 ) -> None:
     connection.execute(
         """
         INSERT INTO knowledge_items (
             id, title, category, audience, summary, answer, steps, source,
-            owner, updated, tags, link, is_seed
+            owner, updated, tags, link, is_seed, is_published
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             category = excluded.category,
@@ -108,7 +118,8 @@ def upsert_knowledge_item(
             updated = excluded.updated,
             tags = excluded.tags,
             link = excluded.link,
-            is_seed = excluded.is_seed
+            is_seed = excluded.is_seed,
+            is_published = excluded.is_published
         """,
         (
             item.id,
@@ -124,6 +135,7 @@ def upsert_knowledge_item(
             serialize_values(item.tags),
             item.link,
             1 if is_seed else 0,
+            1 if is_published else 0,
         ),
     )
     if commit:
@@ -180,19 +192,33 @@ def bootstrap_database(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connect
     return connection
 
 
-def list_knowledge_items(connection: sqlite3.Connection) -> list[KnowledgeItem]:
+def list_knowledge_items(
+    connection: sqlite3.Connection, *, include_drafts: bool = True
+) -> list[KnowledgeItem]:
     rows = connection.execute(
         """
         SELECT *
         FROM knowledge_items
+        WHERE is_published = 1 OR ?
         ORDER BY is_seed ASC, created_at DESC, title ASC
-        """
+        """,
+        (include_drafts,),
     ).fetchall()
     return [row_to_knowledge_item(row) for row in rows]
 
 
 def add_knowledge_item(connection: sqlite3.Connection, item: KnowledgeItem) -> None:
-    upsert_knowledge_item(connection, item, is_seed=False)
+    upsert_knowledge_item(connection, item, is_seed=False, is_published=False)
+
+
+def publish_knowledge_item(connection: sqlite3.Connection, item_id: str) -> None:
+    with connection:
+        result = connection.execute(
+            "UPDATE knowledge_items SET is_published = 1 WHERE id = ? AND is_published = 0",
+            (item_id,),
+        )
+        if result.rowcount != 1:
+            raise ValueError("draft was not found")
 
 
 def record_feedback(

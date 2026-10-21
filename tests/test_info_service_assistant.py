@@ -1,6 +1,7 @@
 import unittest
+from dataclasses import replace
 
-from info_service_assistant import KNOWLEDGE_BASE, KnowledgeItem, build_answer, categories, match_knowledge, rank_knowledge
+from info_service_assistant import KNOWLEDGE_BASE, KnowledgeItem, build_answer, categories, confidence_for_score, match_knowledge, rank_knowledge
 
 
 class InfoServiceAssistantTests(unittest.TestCase):
@@ -81,6 +82,42 @@ class InfoServiceAssistantTests(unittest.TestCase):
         self.assertEqual(len(ranked), 5)
         self.assertEqual(ranked[0][0].id, "campus-network")
         self.assertGreater(ranked[0][1], ranked[-1][1])
+
+    def test_network_question_does_not_prefer_printer_with_generic_filler(self):
+        printer = replace(
+            KNOWLEDGE_BASE[1],
+            id="printer",
+            title="网络打印机连不上怎么办？",
+            summary="检查打印机连接。",
+            answer="检查打印机是否与设备处于同一局域网。",
+            tags=("网络服务", "网络打印机连不上怎么办？"),
+        )
+        ranked = rank_knowledge("校园网连不上怎么办？", (printer, KNOWLEDGE_BASE[1]))
+        self.assertEqual(ranked[0][0].id, "campus-network")
+        self.assertGreater(ranked[0][1], ranked[1][1])
+        self.assertGreater(confidence_for_score(ranked[0][1]), confidence_for_score(ranked[1][1]))
+
+    def test_explicit_vpn_query_does_not_prefer_router_fault(self):
+        router = replace(
+            KNOWLEDGE_BASE[1],
+            title="使用路由器上不了网怎么办？",
+            tags=("路由器",),
+        )
+        ranked = rank_knowledge("VPN 连不上", (router, KNOWLEDGE_BASE[2]))
+        self.assertEqual(ranked[0][0].id, "vpn-access")
+
+    def test_unrelated_and_filler_questions_have_no_candidates(self):
+        for question in ("今天中午吃什么", "怎么办", "asdfghjkl", ""):
+            with self.subTest(question=question):
+                self.assertEqual(rank_knowledge(question), [])
+                item, confidence, related = match_knowledge(question)
+                self.assertEqual(confidence, 0)
+                self.assertEqual(related, [])
+                self.assertNotIn(item.answer, build_answer(question, item, confidence))
+
+    def test_empty_knowledge_base_has_clear_error(self):
+        with self.assertRaisesRegex(ValueError, "knowledge base is empty"):
+            match_knowledge("校园网", ())
 
 
 if __name__ == "__main__":

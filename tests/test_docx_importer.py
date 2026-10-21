@@ -7,10 +7,15 @@ from docx_importer import (
     deduplicate_document_entries,
     normalize_question,
     parse_question_answers,
+    import_documents,
 )
 
 
 class DocxImporterTests(unittest.TestCase):
+    def test_empty_document_list_cannot_clear_imported_knowledge(self):
+        with self.assertRaisesRegex(ValueError, "no documents supplied"):
+            import_documents([], ":memory:")
+
     def test_parses_multi_paragraph_answer(self):
         entries = parse_question_answers(
             (

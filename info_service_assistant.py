@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import math
 import re
 from typing import Iterable
+import unicodedata
 
 from knowledge_taxonomy import ordered_categories
 
@@ -429,57 +431,71 @@ def categories(items: Iterable[KnowledgeItem]) -> list[str]:
 
 
 def normalize(value: str) -> str:
-    return value.lower().strip()
+    return unicodedata.normalize("NFKC", value).casefold().strip()
+
+
+QUESTION_FILLER = re.compile(
+    r"怎么办|怎么样|如何|怎么|为什么|是什么|什么原因|在哪里|在哪|请问|我要|我想|能否|可以|是否|什么"
+)
+
+
+def search_text(value: str) -> str:
+    value = normalize(value)
+    for alias in ("连不上", "上不了网", "无法上网", "不能上网"):
+        value = value.replace(alias, "无法连接")
+    value = value.replace("服务大厅", "办事大厅")
+    return re.sub(r"[^\w]+", "", QUESTION_FILLER.sub("", value))
 
 
 def tokenize(query: str) -> list[str]:
-    normalized = normalize(query)
-    tokens = [token for token in re.split(r"[\s,，。！？?;；、/\\]+", normalized) if token]
-
-    # Chinese questions often arrive without spaces. Add short phrase fragments so
-    # “校外怎么访问校内资源” can still match a “校外访问校内途径” knowledge item.
+    normalized = search_text(query)
+    tokens = re.findall(r"[a-z0-9]+", normalized)
     for phrase in re.findall(r"[\u4e00-\u9fff]{2,}", normalized):
-        cleaned = re.sub(r"^(如何|怎么|请问|我要|我想|能否|可以|在)", "", phrase)
         for length in (2, 3, 4):
             tokens.extend(
-                cleaned[index:index + length]
-                for index in range(max(len(cleaned) - length + 1, 0))
+                phrase[index:index + length]
+                for index in range(max(len(phrase) - length + 1, 0))
             )
 
     return list(dict.fromkeys(token for token in tokens if token))
 
 
 def score_item(query: str, item: KnowledgeItem) -> int:
-    if not query.strip():
+    tokens = tokenize(query)
+    if not tokens:
         return 0
 
-    text = normalize(
-        " ".join(
-            [
-                item.title,
-                item.category,
-                item.summary,
-                item.answer,
-                " ".join(item.tags),
-            ]
-        )
+    query_text = search_text(query)
+    title = search_text(item.title)
+    if title and query_text == title:
+        return 140
+
+    # Normalize evidence by query coverage so repeated fragments and long answers
+    # cannot inflate every imported question to the same maximum match value.
+    total_weight = sum(len(token) for token in tokens)
+    fields = (
+        (title, 65),
+        (" ".join(search_text(tag) for tag in item.tags), 25),
+        (search_text(item.summary), 10),
+        (search_text(item.answer), 8),
     )
-    score = 9 if normalize(query) in text else 0
-
-    for token in tokenize(query):
-        if token in normalize(item.title):
-            score += 5
-        if any(token in normalize(tag) or normalize(tag) in token for tag in item.tags):
-            score += 4
-        if token in text:
-            score += 2
-
-    score += sum(3 for tag in item.tags if tag in query)
-    return score
+    identifiers = re.findall(r"[a-z][a-z0-9]*", normalize(query))
+    evidence = " ".join(text for text, _ in fields)
+    if any(identifier not in evidence for identifier in identifiers):
+        return 0
+    score = sum(
+        weight * sum(len(token) for token in tokens if token in text) / total_weight
+        for text, weight in fields
+    )
+    if len(query_text) >= 4 and query_text in title:
+        score += 20
+    elif len(title) >= 4 and title in query_text:
+        score += 15
+    return round(score)
 
 
 def confidence_for_score(score: int) -> int:
-    return min(96, max(42, 48 + score * 6))
+    return min(96, round(100 * (1 - math.exp(-max(score, 0) / 35))))
 
 
 def rank_knowledge(
@@ -489,7 +505,7 @@ def rank_knowledge(
     limit: int | None = None,
 ) -> list[tuple[KnowledgeItem, int]]:
     ranked = sorted(
-        ((item, score_item(query, item)) for item in items),
+        ((item, score) for item in items if (score := score_item(query, item)) > 0),
         key=lambda entry: (entry[1], entry[0].title),
         reverse=True,
     )
@@ -500,9 +516,12 @@ def match_knowledge(
     query: str,
     items: Iterable[KnowledgeItem] = KNOWLEDGE_BASE,
 ) -> tuple[KnowledgeItem, int, list[KnowledgeItem]]:
+    items = tuple(items)
+    if not items:
+        raise ValueError("knowledge base is empty")
     ranked = rank_knowledge(query, items)
     if not ranked:
-        raise ValueError("knowledge base is empty")
+        return items[0], 0, []
 
     best_item, best_score = ranked[0]
     confidence = confidence_for_score(best_score)
@@ -511,6 +530,8 @@ def match_knowledge(
 
 
 def build_answer(query: str, item: KnowledgeItem, confidence: int) -> str:
+    if confidence == 0:
+        return f"知识库中暂未找到与“{query}”相关的条目，请补充服务名称或具体报错。"
     if confidence < 55:
         return f"我没有完全匹配到“{query}”的专门条目，先按“{item.title}”给出相近建议：{item.answer}"
     return item.answer

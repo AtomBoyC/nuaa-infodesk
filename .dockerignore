@@ -1,0 +1,10 @@
+**
+!requirements.txt
+!*.py
+!deploy/
+deploy/**
+!deploy/container_start.py
+!deploy/database_backup.py
+!data/
+data/**
+!data/info_service.db

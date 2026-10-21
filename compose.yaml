@@ -1,0 +1,34 @@
+name: nuaa-infodesk
+
+services:
+  infodesk:
+    build:
+      context: .
+    image: nuaa-infodesk:local
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${INFODESK_BIND_ADDRESS:-127.0.0.1}:${INFODESK_PORT:-8501}:8501"
+    environment:
+      INFODESK_REQUIRE_ADMIN_PASSWORD: "true"
+      INFODESK_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+    secrets:
+      - admin_password
+    volumes:
+      - knowledge_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  admin_password:
+    file: ./.secrets/admin_password
+
+volumes:
+  knowledge_data:

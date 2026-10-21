@@ -13,14 +13,15 @@
 
 ## 功能介绍
 
-- 问答检索：通过页面顶部搜索框输入自然语言问题，系统从 SQLite 知识库中匹配最相关条目并生成标准答复。
+- 问答检索：通过页面顶部搜索框输入自然语言问题，展示最多 10 条相关候选及对应标准答复；无匹配时提示补充问题。
+- 独立页面：智能问答、匹配结果、知识目录、常用服务、最近会话、知识维护分别使用独立路由。
 - 分类浏览：统一按网络服务、账号与安全、服务大厅、信息系统、协同办公、软件服务、通知与制度、新闻与党建、部门信息分类查看。
 - 来源追溯：每条回答展示来源、更新时间、责任岗位，便于后续审核和维护。
 - 快捷问题：内置校园网、VPN、正版软件、统一身份认证、报修等高频入口。
 - 反馈闭环：记录“有帮助”和“需人工跟进”，用于评估知识库质量。
-- 知识维护：支持新增临时知识草稿，写入 SQLite 数据库，并可导出完整知识库 JSON 文件。
+- 知识维护：支持保存草稿、审核并发布，以及导出包含发布状态的完整知识库 JSON；草稿在发布前不参与问答和目录检索。
 - 数据持久化：知识库条目和反馈记录保存在本地数据库中，应用重启后仍可保留。
-- 默认知识：首次启动自动写入 19 条信息化服务常见问题。
+- 随仓数据：`data/info_service.db` 包含 254 条知识、9 个分类。缺失数据库时，系统创建空库并补入 19 条默认示例。
 - 官网导入：可将信息化处官网的公开页面按主题分类后写入 SQLite，并保留原文链接。
 
 ## 文件结构
@@ -33,7 +34,11 @@ site_importer.py               # 信息化处官网公开页面抓取、分类�
 docx_importer.py               # 本地 Word 问答资料解析、分类、导入工具
 knowledge_taxonomy.py          # 知识分类归一化规则
 knowledge_dedup.py             # 数据库重复条目检查与清理工具
+check_knowledge.py             # 只读检查完整性、必填字段和同名重复
 requirements.txt              # Python 依赖
+data/info_service.db           # 正式知识库，已纳入版本控制
+docs/                         # 参赛提交清单和检查记录
+.github/workflows/tests.yml    # GitHub 自动测试
 tests/test_info_service_assistant.py
 tests/test_database.py
 react-next-version/          # 早期 React/Next.js Web 版本，已独立归档
@@ -45,7 +50,7 @@ React/Next.js 版本已移动到 `react-next-version/`，不影响根目录的 P
 ## 运行环境
 
 - Python：建议 3.10 或以上
-- 主要依赖：Streamlit
+- 主要依赖：Streamlit 1.62.0，版本在 requirements.txt 中固定
 - 数据存储：SQLite，本地数据库文件默认生成在 `data/info_service.db`
 
 ## 安装与运行
@@ -54,7 +59,7 @@ React/Next.js 版本已移动到 `react-next-version/`，不影响根目录的 P
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run streamlit_app.py
+python -m streamlit run streamlit_app.py --server.address localhost
 ```
 
 启动后浏览器会打开本地地址，通常为：
@@ -63,7 +68,20 @@ streamlit run streamlit_app.py
 http://localhost:8501/
 ```
 
-首次启动时，系统会自动创建 SQLite 数据库并写入 19 条默认知识库条目。后续在页面底部“知识维护”中新增的条目，以及“有帮助 / 需人工跟进”反馈，都会保存到 `data/info_service.db`。
+从仓库下载时已包含正式知识库，可以直接使用。只有数据库文件缺失时，才会自动创建数据库并写入 19 条默认示例。数据库默认路径相对于本工程目录解析，避免从不同目录启动时误建新库。
+
+点击顶部“知识维护”可以保存草稿并审核发布。新增条目和反馈保存在 `data/info_service.db`。升级时会自动补充缺失的数据库字段，原有知识保留。Docker Compose 部署会为知识维护启用管理员密码；本机开发未配置密码时保留直接访问。
+
+## Docker Compose 部署
+
+```bash
+python3 deploy/setup.py
+docker compose up -d --build --wait --wait-timeout 180
+```
+
+首次启动使用随镜像附带的知识库，数据库放在持久化数据卷中。基础配置绑定服务器 `127.0.0.1:8501`，可以用 SSH 隧道或现有网关访问；有域名时可叠加 `compose.https.yaml` 提供 HTTPS。详细的域名配置、管理员登录、更新和备份恢复步骤见 [远程服务器部署说明](docs/docker-compose.md)。
+
+匹配度是文本检索的相关程度，不代表答案正确概率。当前版本使用本地知识检索和已有标准答复，没有连接大模型 API。最近会话仅保留当前浏览器会话中的 5 次有效查询，刷新重连后可能清空。
 
 默认知识库覆盖：
 
@@ -102,7 +120,26 @@ python site_importer.py --dry-run --max-pages 30
 python docx_importer.py "网络知识库问答版.docx" "信息系统知识库问答版.docx"
 ```
 
-导入器会合并同一答案的多段说明，按网络服务、账号与安全、校园服务、协同办公、业务系统等分类，并在单个数据库事务中更新已有 Word 导入条目。
+导入器会合并同一答案的多段说明，按服务主题归入统一分类。同一个问题在不同版本中重复出现时，优先采用文件名年份较新的版本，再按输入顺序选择。可加 `--dry-run` 预览解析结果。
+
+Word 导入采用**整批替换**：成功后会替换数据库中全部 `docx-` 条目。因此更新时应一次传入全部需要保留的 Word 文件，而不只是本次新增文件。空输入、文件不存在或单个文件少于 5 组有效问答时会中止。官网导入也采用整批替换；两类导入都保留其他来源的知识和反馈。
+
+## 数据检查与备份
+
+```bash
+python check_knowledge.py
+python check_knowledge.py --db /绝对路径/知识库.db
+```
+
+检查命令只读，不创建或修改数据库，输出完整性、条目数量、分类、必填字段缺失和规范化标题重复。发现问题时返回非零退出码，便于自动检查。它不判断两条不同标题的答案是否语义重复，也不判断业务口径是否过期。
+
+导入、清理或升级前，先备份当前数据库。可以使用 SQLite 的在线备份接口：
+
+```bash
+python -c "from pathlib import Path; import sqlite3; Path('data/backups').mkdir(parents=True, exist_ok=True); source=sqlite3.connect('data/info_service.db'); target=sqlite3.connect('data/backups/info_service_before_update.db'); source.backup(target); target.close(); source.close()"
+```
+
+正式数据库参与 Git 版本控制，备份及 SQLite 临时日志不上传。更新知识库后需要单独检查并提交数据库变动。反馈含用户输入，提交数据库前也应检查是否包含不适合分享的内容。
 
 ## 测试方法
 
@@ -113,16 +150,16 @@ python -m unittest discover -s tests -p "test_*.py"
 也可以直接用 Python 执行核心逻辑检查：
 
 ```bash
-python -m py_compile info_service_assistant.py database.py streamlit_app.py
+python -m compileall -q info_service_assistant.py database.py streamlit_app.py site_importer.py docx_importer.py check_knowledge.py
 ```
 
 ## 演示建议
 
-1. 打开页面后先点击“校园网连不上怎么办？”展示快捷问答。
+1. 在顶部搜索“校园网连不上怎么办？”，进入独立的匹配结果页。
 2. 输入“校外怎么访问图书馆数据库？”展示 VPN / WebVPN 匹配。
 3. 展示回答下方的办理步骤、来源、责任岗和更新时间。
 4. 点击“有帮助”或“需人工跟进”，说明反馈闭环。
-5. 在“知识维护”中新增一条临时知识，刷新页面后仍可看到该条目。
+5. 在“知识维护”中新增草稿，先确认公开检索不可见，再审核发布后重新搜索。
 6. 导出知识库 JSON，说明数据库内容可以交给管理员审核或迁移。
 
 ## 后续扩展方向
@@ -136,6 +173,8 @@ python -m py_compile info_service_assistant.py database.py streamlit_app.py
 ## 第三方依赖与许可说明
 
 本作品使用公开开源依赖构建，主要依赖为 Streamlit。参赛提交时可附带 `requirements.txt` 作为依赖清单，按依赖原始开源协议执行。
+
+参赛材料准备情况见 [提交清单](docs/submission-checklist.md)，本轮技术检查记录见 [检查记录](docs/project-audit.md)。
 
 ## 原创与合规承诺
 

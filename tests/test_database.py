@@ -1,12 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+import sqlite3
 
 from database import (
     add_knowledge_item,
     bootstrap_database,
     feedback_summary,
     list_knowledge_items,
+    publish_knowledge_item,
     record_feedback,
     replace_imported_site_items,
 )
@@ -14,6 +16,37 @@ from info_service_assistant import KnowledgeItem
 
 
 class DatabaseTests(unittest.TestCase):
+    def test_existing_database_migrates_drafts_without_losing_knowledge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.db"
+            connection = sqlite3.connect(path)
+            connection.execute(
+                """CREATE TABLE knowledge_items (
+                    id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL,
+                    audience TEXT NOT NULL, summary TEXT NOT NULL, answer TEXT NOT NULL,
+                    steps TEXT NOT NULL, source TEXT NOT NULL, owner TEXT NOT NULL,
+                    updated TEXT NOT NULL, tags TEXT NOT NULL, link TEXT NOT NULL DEFAULT '',
+                    is_seed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            for item_id in ("docx-existing", "custom-existing"):
+                connection.execute(
+                    """INSERT INTO knowledge_items
+                        (id, title, category, audience, summary, answer, steps, source, owner, updated, tags)
+                        VALUES (?, ?, '网络服务', '', '', '保留的答案', '', '', '', '', '')""",
+                    (item_id, item_id),
+                )
+            connection.commit()
+            connection.close()
+
+            connection = bootstrap_database(path)
+            published = {item.id for item in list_knowledge_items(connection, include_drafts=False)}
+            self.assertIn("docx-existing", published)
+            self.assertNotIn("custom-existing", published)
+            self.assertIn("custom-existing", {item.id for item in list_knowledge_items(connection)})
+            connection.close()
+
     def test_bootstrap_seeds_default_knowledge(self):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "assistant.db"
@@ -100,6 +133,25 @@ class DatabaseTests(unittest.TestCase):
 
             saved = next(entry for entry in list_knowledge_items(connection) if entry.id == item.id)
             self.assertEqual(saved.category, "服务大厅")
+
+    def test_draft_is_not_searchable_until_published(self):
+        with tempfile.TemporaryDirectory() as directory:
+            connection = bootstrap_database(Path(directory) / "knowledge.db")
+            item = KnowledgeItem(
+                "custom-draft", "待审核答案", "网络服务", "", "", "草稿内容", (), "", "", "", ()
+            )
+            add_knowledge_item(connection, item)
+            self.assertIn(item.id, {entry.id for entry in list_knowledge_items(connection)})
+            self.assertNotIn(
+                item.id,
+                {entry.id for entry in list_knowledge_items(connection, include_drafts=False)},
+            )
+            publish_knowledge_item(connection, item.id)
+            self.assertIn(
+                item.id,
+                {entry.id for entry in list_knowledge_items(connection, include_drafts=False)},
+            )
+            connection.close()
 
 
 if __name__ == "__main__":

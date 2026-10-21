@@ -1,0 +1,4 @@
+{$INFODESK_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy infodesk:8501
+}

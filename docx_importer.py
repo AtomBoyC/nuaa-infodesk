@@ -187,6 +187,9 @@ def import_documents(paths: Iterable[Path], db_path: Path | str, *, dry_run: boo
             raise ValueError(f"only {len(entries)} Q&A entries found in {path.name}; import aborted")
         documents.append((path, entries))
 
+    if not documents:
+        raise ValueError("no documents supplied; existing knowledge was not changed")
+
     all_items = [
         entries_to_items((entry,), source_path)[0]
         for source_path, entry in deduplicate_document_entries(documents)

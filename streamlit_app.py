@@ -3,17 +3,18 @@ from __future__ import annotations
 import json
 from collections import Counter
 from datetime import date, datetime
-from hashlib import sha1
+from hashlib import sha1, sha256
 from html import escape
-from pathlib import Path
 
 import streamlit as st
 
 from database import (
+    DEFAULT_DB_PATH,
     add_knowledge_item,
     bootstrap_database,
     feedback_summary,
     list_knowledge_items,
+    publish_knowledge_item,
     record_feedback,
 )
 from info_service_assistant import (
@@ -25,6 +26,7 @@ from info_service_assistant import (
     match_knowledge,
     rank_knowledge,
 )
+from maintenance_auth import admin_password, password_matches
 
 
 st.set_page_config(
@@ -408,7 +410,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-DB_PATH = Path("data/info_service.db")
+DB_PATH = DEFAULT_DB_PATH
 
 
 def bootstrap_state() -> None:
@@ -422,13 +424,14 @@ def bootstrap_state() -> None:
         st.session_state.pending_search_input = ""
 
 
-def all_knowledge() -> list[KnowledgeItem]:
-    return list_knowledge_items(get_db())
+def all_knowledge(*, include_drafts: bool = False) -> list[KnowledgeItem]:
+    return list_knowledge_items(get_db(), include_drafts=include_drafts)
 
 
-@st.cache_resource
 def get_db():
-    return bootstrap_database(DB_PATH)
+    if "_database" not in st.session_state:
+        st.session_state._database = bootstrap_database(DB_PATH)
+    return st.session_state._database
 
 
 def add_chat(question: str, item: KnowledgeItem, confidence: int) -> None:
@@ -449,12 +452,21 @@ def add_chat(question: str, item: KnowledgeItem, confidence: int) -> None:
 def ask_question(question: str) -> tuple[KnowledgeItem, int, list[KnowledgeItem]]:
     item, confidence, related = match_knowledge(question, all_knowledge())
     st.session_state.selected_candidate_id = item.id
-    add_chat(question, item, confidence)
+    if related:
+        add_chat(question, item, confidence)
     return item, confidence, related
 
 
 def export_knowledge_json() -> str:
-    payload = [item.to_dict() for item in all_knowledge()]
+    connection = get_db()
+    drafts = {
+        row["id"]
+        for row in connection.execute("SELECT id FROM knowledge_items WHERE is_published = 0")
+    }
+    payload = [
+        {**item.to_dict(), "is_published": item.id not in drafts}
+        for item in all_knowledge(include_drafts=True)
+    ]
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
@@ -485,6 +497,7 @@ def render_section_heading(title: str, detail: str) -> None:
 def prepare_result(question: str, *, record_history: bool = True) -> None:
     cleaned = question.strip()
     if not cleaned:
+        st.warning("请先输入信息化服务问题。")
         return
     st.session_state.question = cleaned
     st.session_state.pending_search_input = cleaned
@@ -614,7 +627,7 @@ def result_candidates(question: str) -> tuple[dict[str, tuple[KnowledgeItem, int
     candidate_by_id = {item.id: (item, score) for item, score in ranked}
     candidate_id = st.session_state.selected_candidate_id
     if candidate_id not in candidate_by_id:
-        candidate_id = next(iter(candidate_by_id))
+        candidate_id = next(iter(candidate_by_id), "")
         st.session_state.selected_candidate_id = candidate_id
     return candidate_by_id, candidate_id
 
@@ -686,7 +699,7 @@ def render_feedback_actions(item: KnowledgeItem, question: str) -> None:
         st.toast("已记录：有帮助")
         st.rerun()
     if manual_action.button(
-        "人工跟进", icon=":material/support_agent:", use_container_width=True
+        "需人工跟进", icon=":material/support_agent:", use_container_width=True
     ):
         record_feedback(get_db(), "manual", question=question, knowledge_item_id=item.id)
         st.toast("已记录：需人工跟进")
@@ -707,6 +720,11 @@ def render_results_page() -> None:
 
     knowledge_items = all_knowledge()
     candidate_by_id, candidate_id = result_candidates(question)
+    if not candidate_by_id:
+        render_page_title(question, "未找到相关知识")
+        st.info("暂无相关知识，请补充服务名称、设备类型或具体报错。")
+        st.page_link(DIRECTORY_PAGE, label="浏览知识目录", icon=":material/menu_book:")
+        return
     widget_key = f"result_candidate_{sha1(question.encode('utf-8')).hexdigest()[:12]}"
     if (
         widget_key not in st.session_state
@@ -848,9 +866,43 @@ def render_history_page() -> None:
                 prepare_result(message["question"], record_history=False)
 
 
+def maintenance_access_allowed() -> bool:
+    try:
+        password = admin_password()
+    except RuntimeError:
+        st.error("管理员登录配置异常，请联系服务器管理员。")
+        return False
+    if password is None:
+        return True
+
+    password_version = sha256(password.encode("utf-8")).hexdigest()
+    if st.session_state.get("_admin_password_version") == password_version:
+        if st.button("退出管理", icon=":material/logout:"):
+            del st.session_state._admin_password_version
+            st.rerun()
+        return True
+
+    render_page_title("知识维护", "管理员登录")
+    with st.form("admin_login"):
+        candidate = st.text_input("管理员密码", type="password")
+        submitted = st.form_submit_button("登录", icon=":material/login:", type="primary")
+    if submitted:
+        if password_matches(candidate, password):
+            st.session_state._admin_password_version = password_version
+            st.rerun()
+        st.error("密码不正确。")
+    return False
+
+
 def render_maintenance_page() -> None:
-    knowledge_items = all_knowledge()
-    custom_count = sum(item.id.startswith("custom-") for item in knowledge_items)
+    if not maintenance_access_allowed():
+        return
+    knowledge_items = all_knowledge(include_drafts=True)
+    draft_ids = {
+        row["id"]
+        for row in get_db().execute("SELECT id FROM knowledge_items WHERE is_published = 0")
+    }
+    drafts = [item for item in knowledge_items if item.id in draft_ids]
     render_page_title(
         "知识维护",
         "本地管理",
@@ -858,7 +910,7 @@ def render_maintenance_page() -> None:
     )
     metric_1, metric_2, metric_3 = st.columns(3)
     metric_1.metric("全部知识", len(knowledge_items))
-    metric_2.metric("本地草稿", custom_count)
+    metric_2.metric("本地草稿", len(drafts))
     metric_3.metric("数据格式", "SQLite")
 
     render_section_heading("新增知识草稿", "写入本地数据库")
@@ -877,7 +929,9 @@ def render_maintenance_page() -> None:
             use_container_width=True,
         )
 
-    if save_item and title.strip() and answer_input.strip():
+    if save_item and (not title.strip() or not answer_input.strip()):
+        st.error("请填写问题标题和标准答案。")
+    elif save_item:
         tags = tuple(
             tag.strip()
             for tag in tags_input.replace("，", ",").split(",")
@@ -899,6 +953,16 @@ def render_maintenance_page() -> None:
         add_knowledge_item(get_db(), new_item)
         st.success("草稿已保存到 SQLite 数据库。")
         st.rerun()
+
+    if drafts:
+        render_section_heading("待审核知识", f"{len(drafts)} 条")
+        draft = st.selectbox(
+            "选择草稿", drafts, format_func=lambda item: item.title, key="review_draft"
+        )
+        st.write(draft.answer)
+        if st.button("审核并发布", icon=":material/publish:"):
+            publish_knowledge_item(get_db(), draft.id)
+            st.rerun()
 
     render_section_heading("数据导出", "JSON 交换格式")
     export_column, export_spacer = st.columns([1.2, 4.8])

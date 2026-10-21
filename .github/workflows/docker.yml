@@ -1,0 +1,45 @@
+name: Docker Deployment Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare configuration
+        run: python deploy/setup.py
+      - name: Validate Compose files
+        run: |
+          docker compose config --quiet
+          INFODESK_DOMAIN=infodesk.example.com docker compose -f compose.yaml -f compose.https.yaml config --quiet
+      - name: Build image and start container
+        run: |
+          docker compose build
+          docker compose up -d --wait --wait-timeout 180
+      - name: Check database, password configuration and backup
+        run: |
+          docker compose exec -T infodesk python check_knowledge.py
+          docker compose exec -T infodesk python -c "from maintenance_auth import admin_password; assert len(admin_password()) >= 16"
+          docker compose exec -T infodesk python database_backup.py
+      - name: Check data survives container replacement
+        run: |
+          docker compose exec -T infodesk python -c "import sqlite3; c=sqlite3.connect('data/info_service.db'); c.execute('CREATE TABLE deployment_probe (value TEXT)'); c.execute('INSERT INTO deployment_probe VALUES (?)', ('retained',)); c.commit(); c.close()"
+          docker compose up -d --force-recreate --wait --wait-timeout 180
+          docker compose exec -T infodesk python -c "import sqlite3; c=sqlite3.connect('data/info_service.db'); assert c.execute('SELECT value FROM deployment_probe').fetchone()[0] == 'retained'; c.close()"
+      - name: Show diagnostics
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Clean up test environment
+        if: always()
+        run: docker compose down --volumes

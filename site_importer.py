@@ -48,6 +48,7 @@ class PageParser(HTMLParser):
 
     BLOCK_TAGS = {"article", "br", "div", "h1", "h2", "h3", "h4", "li", "p", "section", "tr"}
     HIDDEN_TAGS = {"footer", "header", "iframe", "nav", "noscript", "script", "style", "svg"}
+    VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -56,7 +57,8 @@ class PageParser(HTMLParser):
         self._title_parts: list[str] = []
         self._text_parts: list[str] = []
         self._article_parts: list[str] = []
-        self._article_tags: list[str] = []
+        self._open_tags: list[str] = []
+        self._article_depth: int | None = None
         self.description = ""
         self.links: list[str] = []
 
@@ -77,8 +79,10 @@ class PageParser(HTMLParser):
         if tag == "meta" and attributes.get("name", "").lower() == "description":
             self.description = compact_text(attributes.get("content") or "")
         class_names = (attributes.get("class") or "").split()
-        if "wp_articlecontent" in class_names:
-            self._article_tags.append(tag)
+        if tag not in self.VOID_TAGS:
+            self._open_tags.append(tag)
+            if "wp_articlecontent" in class_names and self._article_depth is None:
+                self._article_depth = len(self._open_tags)
         if tag in self.HIDDEN_TAGS:
             self._hidden_depth += 1
         if tag == "title":
@@ -89,7 +93,7 @@ class PageParser(HTMLParser):
                 self.links.append(href)
         if not self._hidden_depth and tag in self.BLOCK_TAGS:
             self._text_parts.append("\n")
-            if self._article_tags:
+            if self._article_depth is not None:
                 self._article_parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
@@ -97,11 +101,14 @@ class PageParser(HTMLParser):
             self._in_title = False
         if tag in self.HIDDEN_TAGS and self._hidden_depth:
             self._hidden_depth -= 1
-        if self._article_tags and self._article_tags[-1] == tag:
-            self._article_tags.pop()
+        if tag in self._open_tags:
+            index = len(self._open_tags) - 1 - self._open_tags[::-1].index(tag)
+            del self._open_tags[index:]
+            if self._article_depth is not None and len(self._open_tags) < self._article_depth:
+                self._article_depth = None
         if not self._hidden_depth and tag in self.BLOCK_TAGS:
             self._text_parts.append("\n")
-            if self._article_tags:
+            if self._article_depth is not None:
                 self._article_parts.append("\n")
 
     def handle_data(self, data: str) -> None:
@@ -109,7 +116,7 @@ class PageParser(HTMLParser):
             self._title_parts.append(data)
         if not self._hidden_depth:
             self._text_parts.append(data)
-            if self._article_tags:
+            if self._article_depth is not None:
                 self._article_parts.append(data)
 
 
@@ -294,7 +301,7 @@ def crawl_public_pages(base_url: str, max_pages: int, delay: float) -> Iterable[
             continue
         yield page
         for href in page.links:
-            child = normalized_url(base_url, href)
+            child = normalized_url(page.url, href)
             if child and child not in visited:
                 frontier.append(child)
         if delay:
@@ -309,28 +316,27 @@ def import_site(
     dry_run: bool,
     minimum_items: int,
 ) -> tuple[int, int]:
-    connection = bootstrap_database(db_path)
     visited_count = 0
     items: list[KnowledgeItem] = []
-    try:
-        for page in crawl_public_pages(base_url, max_pages, delay):
-            visited_count += 1
-            item = page_to_knowledge_item(page)
-            if item is None:
-                continue
+    for page in crawl_public_pages(base_url, max_pages, delay):
+        visited_count += 1
+        item = page_to_knowledge_item(page)
+        if item is not None:
             items.append(item)
-        items = deduplicate_items(items)
-        if not dry_run and len(items) < minimum_items:
-            raise RuntimeError(
-                f"only {len(items)} valid content pages were found; "
-                f"refusing to replace the existing import (minimum: {minimum_items})"
-            )
-        if not dry_run:
+    items = deduplicate_items(items)
+    if not dry_run and (not items or len(items) < minimum_items):
+        raise RuntimeError(
+            f"only {len(items)} valid content pages were found; "
+            f"refusing to replace the existing import (minimum: {minimum_items})"
+        )
+    if not dry_run:
+        connection = bootstrap_database(db_path)
+        try:
             replace_imported_site_items(connection, items)
-        for index, item in enumerate(items, start=1):
-            print(f"[{index}] {item.category} | {item.title}")
-    finally:
-        connection.close()
+        finally:
+            connection.close()
+    for index, item in enumerate(items, start=1):
+        print(f"[{index}] {item.category} | {item.title}")
     return visited_count, len(items)
 
 
