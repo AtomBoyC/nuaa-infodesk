@@ -2,7 +2,7 @@
 
 适用于 Python + Streamlit 主版本。基础配置运行一个应用容器；有域名时可叠加 Caddy，提供 HTTPS 和反向代理。
 
-首次部署且需要从私有 GitHub 仓库下载、解压，请先看 [Linux 服务器部署操作指南](linux-github-deployment.md)。本文保留 Compose 配置与备份恢复的详细参考。
+GitHub 仓库现已公开，下载不需要登录或 Token。首次部署且需要下载、解压，请先看 [Linux 服务器部署操作指南](linux-github-deployment.md)。知识维护仍需管理员密码，本文保留 Compose 配置与备份恢复的详细参考。
 
 ## 1. 服务器准备
 

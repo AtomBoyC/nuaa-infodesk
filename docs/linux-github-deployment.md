@@ -1,10 +1,10 @@
 # Linux 服务器部署操作指南
 
-NUAA InfoDesk · 从私有 GitHub 仓库下载到 Docker Compose 部署
+NUAA InfoDesk · 从公开 GitHub 仓库下载到 Docker Compose 部署
 
 适用版本：Python + Streamlit + SQLite 主版本，GitHub `main` 分支。编写日期：2026 年 10 月 21 日。
 
-项目仓库：[AtomBoyC/nuaa-infodesk](https://github.com/AtomBoyC/nuaa-infodesk)。仓库目前是私有的，下载前必须登录有权限的 GitHub 账号。无需将仓库改为公开。
+项目仓库：[AtomBoyC/nuaa-infodesk](https://github.com/AtomBoyC/nuaa-infodesk)。仓库现已公开，查看源码、下载压缩包和更新代码均不需要登录 GitHub，也不需要 GitHub Token。知识维护的管理员密码仍然保留。
 
 ## 一 阅读顺序与准备
 
@@ -15,12 +15,11 @@ NUAA InfoDesk · 从私有 GitHub 仓库下载到 Docker Compose 部署
 准备以下信息：
 
 - 服务器公网 IP、SSH 用户名、SSH 端口，以及密码或 SSH 密钥。
-- 有权读取该私有仓库的 GitHub 账号。
 - 一台支持 Docker 的 64 位 Linux 服务器。本文安装示例针对 Ubuntu 22.04 或 24.04；其他发行版不要直接套用 Ubuntu 安装命令。
 - 服务器能访问 GitHub、Docker 镜像仓库和 Python 包源。下载代码成功不等于镜像和依赖也能下载。
-- 普通账号具有 `sudo` 权限。本文统一使用 `sudo docker`；如果已经是 root，可去掉 `sudo`。`gh`、解压和初始化仍使用同一个 SSH 账号，不要中途切换账号。
+- 普通账号具有 `sudo` 权限。本文统一使用 `sudo docker`；如果已经是 root，可去掉 `sudo`。下载、解压和初始化仍使用同一个 SSH 账号，不要中途切换账号。
 
-**三个密码不要混淆**：SSH 密码用于登录服务器；GitHub 授权用于读取私有代码；应用管理员密码用于“知识维护”，在第五节生成。
+**两个密码不要混淆**：SSH 密码用于登录服务器；应用管理员密码用于“知识维护”，在第五节生成。公开仓库下载不需要任何 GitHub 账号密码，公开源码也不等于取消服务器和应用的登录保护。
 
 ## 二 登录服务器并检查环境
 
@@ -51,37 +50,16 @@ sudo apt-get install -y ca-certificates curl python3 unzip
 
 宿主机 Python 仅用于初始化配置，不必安装 Streamlit 或创建虚拟环境；运行依赖由 Docker 镜像安装。
 
-## 三 授权服务器下载私有仓库
+## 三 获取公开仓库下载地址
 
-**以下在服务器执行**。先检查 GitHub CLI：
+可以直接打开 [项目仓库](https://github.com/AtomBoyC/nuaa-infodesk) 查看代码，或下载 `main` 分支压缩包：
 
-```bash
-gh --version
-```
+- [下载 TAR.GZ 压缩包](https://github.com/AtomBoyC/nuaa-infodesk/archive/refs/heads/main.tar.gz)，适合 Linux 命令行解压。
+- [下载 ZIP 压缩包](https://github.com/AtomBoyC/nuaa-infodesk/archive/refs/heads/main.zip)，适合在自己电脑下载后上传。
 
-没有 `gh` 时，按附录 B 安装。然后登录：
+下面使用 `curl` 从 GitHub 的压缩包下载域名 `codeload.github.com` 直接下载，内容同样来自 `main` 分支。无需安装 GitHub CLI、执行 `gh auth login`，或在服务器保存 GitHub 凭据。压缩包格式说明见 [GitHub 官方下载文档](https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives)。
 
-```bash
-gh auth login --hostname github.com --git-protocol https --web
-```
-
-按照提示完成浏览器授权：
-
-1. 终端显示一次性验证码和授权网址时，保留该终端。
-2. 在自己电脑的浏览器打开提示的网址，通常是 `https://github.com/login/device`。
-3. 使用有仓库权限的账号登录，输入本次验证码，核对请求后授权。
-4. 回到服务器等待登录完成。服务器无法自动打开浏览器时，手动在自己电脑打开网址即可。
-
-授权后检查访问权限：
-
-```bash
-gh auth status --hostname github.com
-gh repo view AtomBoyC/nuaa-infodesk
-```
-
-看到项目名称和仓库信息后再继续。不要给 `gh` 增加 `sudo`，否则会切换为另一套登录状态。未经授权直接 `wget` 私有仓库链接，可能得到 404 或登录页面，并不是代码包。登录方式参见 [GitHub CLI 官方说明](https://cli.github.com/manual/gh_auth_login)。
-
-**凭据保管**：无系统钥匙环的 Linux 服务器可能将 GitHub 凭据保存在当前用户配置文件中。不要复制或上传 `~/.config/gh/`，不要把 Token 写进下载链接。只部署一次时，完成下载后可执行 `gh auth logout --hostname github.com` 清除服务器上的 CLI 登录；后续更新再授权。若不愿在服务器保存 GitHub 授权，直接使用第八节。
+如果服务器无法访问这些下载地址，使用第八节从自己电脑上传 ZIP；下载代码成功后，构建镜像仍需要服务器访问镜像仓库和 Python 包源。
 
 ## 四 从 GitHub 下载并解压项目
 
@@ -90,9 +68,9 @@ gh repo view AtomBoyC/nuaa-infodesk
 ```bash
 mkdir -p "$HOME/apps/nuaa-infodesk"
 cd "$HOME/apps"
-gh api --hostname github.com \
-  repos/AtomBoyC/nuaa-infodesk/tarball/main \
-  > nuaa-infodesk-main.tar.gz
+curl -fL --connect-timeout 15 --max-time 180 \
+  -o nuaa-infodesk-main.tar.gz \
+  https://codeload.github.com/AtomBoyC/nuaa-infodesk/tar.gz/refs/heads/main
 ```
 
 下载结束且没有报错后，验证压缩包并解压：
@@ -105,7 +83,7 @@ cd "$HOME/apps/nuaa-infodesk"
 ls -a
 ```
 
-`--strip-components=1` 去掉 GitHub 压缩包最外层目录，使 `compose.yaml` 直接位于项目根目录。下载的是 `main` 分支的完整源码快照，不包含 Git 历史；以后不要在此目录使用 `git pull`，更新见第十节。接口依据见 [GitHub 源码压缩包 API](https://docs.github.com/en/rest/repos/contents#download-a-repository-archive-tar)。
+`curl -fL` 会跟随跳转，并在 HTTP 错误时返回失败；如果下载或验证报错，先停止操作，确认下载成功再解压。`--strip-components=1` 去掉压缩包最外层目录，使 `compose.yaml` 直接位于项目根目录。下载的是 `main` 分支的完整源码快照，不包含 Git 历史；以后不要在此目录使用 `git pull`，更新见第十节。
 
 确认关键文件存在：
 
@@ -207,9 +185,9 @@ sudo docker compose -f compose.yaml -f compose.https.yaml \
 
 ## 八 备选方案 在电脑下载 ZIP 再上传
 
-适用于服务器访问不了 GitHub，或不希望在服务器登录 GitHub。此方案替代第三、四节，其余启动步骤相同。服务器仍需能下载 Docker 镜像和 Python 依赖。
+适用于服务器访问不了 GitHub，但自己电脑可以访问的情况。此方案替代第三、四节，其余启动步骤相同；两种下载方式都不需要登录 GitHub。服务器仍需能下载 Docker 镜像和 Python 依赖。
 
-1. 在自己电脑浏览器登录有权限的 GitHub 账号，打开 [项目仓库](https://github.com/AtomBoyC/nuaa-infodesk)。
+1. 在自己电脑浏览器打开 [项目仓库](https://github.com/AtomBoyC/nuaa-infodesk)，无需登录。
 2. 确认分支选择 `main`，点击 **Code → Download ZIP**。操作方式见 [GitHub 官方下载说明](https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives)。
 3. 首次部署时，在服务器执行 `mkdir -p "$HOME/apps"`。
 4. 在自己电脑终端执行上传命令，将文件路径和服务器参数换成实际值：
@@ -268,9 +246,9 @@ echo "$HOME/backups/nuaa-infodesk/$BACKUP"
 OLD="$HOME/apps/nuaa-infodesk"
 NEW="$HOME/apps/nuaa-infodesk-$(date -u +%Y%m%d-%H%M%S)"
 cd "$HOME/apps"
-gh api --hostname github.com \
-  repos/AtomBoyC/nuaa-infodesk/tarball/main \
-  > nuaa-infodesk-update.tar.gz
+curl -fL --connect-timeout 15 --max-time 180 \
+  -o nuaa-infodesk-update.tar.gz \
+  https://codeload.github.com/AtomBoyC/nuaa-infodesk/tar.gz/refs/heads/main
 tar -tzf nuaa-infodesk-update.tar.gz > /dev/null
 mkdir "$NEW"
 tar -xzf nuaa-infodesk-update.tar.gz \
@@ -285,7 +263,7 @@ sudo docker compose exec infodesk python check_knowledge.py
 pwd
 ```
 
-若已退出 GitHub 登录，先重新执行第三节授权。启用 Caddy 的站点要为以上 Compose 命令加上第七节的双配置参数。之后验证网页功能，并记录 `pwd` 输出，今后从这个新目录操作；不要删除旧目录或数据库卷，也不要在旧目录运行 `down`，同名项目会影响当前服务。
+更新与首次下载一样，无需 GitHub 登录。启用 Caddy 的站点要为以上 Compose 命令加上第七节的双配置参数。之后验证网页功能，并记录 `pwd` 输出，今后从这个新目录操作；不要删除旧目录或数据库卷，也不要在旧目录运行 `down`，同名项目会影响当前服务。
 
 更新代码不会自动导入 GitHub 仓库中更新过的知识数据。线上知识应通过“知识维护”或经过确认的导入流程更新，避免覆盖线上新增数据。数据库结构变化时，也不要仅通过切回旧源码目录来回滚数据库。
 
@@ -301,7 +279,8 @@ sudo docker compose restart infodesk
 
 前两条查看状态和日志，第三条重启应用。需要停止整个项目且保留数据时执行 `sudo docker compose down`；恢复时执行 `sudo docker compose up -d --wait --wait-timeout 180`。修改源码后需增加 `--build`，普通重启不会重新构建镜像。
 
-- **GitHub 返回 404 或提示无权限**：确认授权账号可以在浏览器看到私有仓库；用 `gh auth status` 和 `gh repo view` 检查。不要因此修改仓库可见性。
+- **GitHub 返回 404 或出现登录提示**：当前仓库已公开，先核对仓库名、下载地址和 `main` 分支是否正确，或是否误用了旧的私有链接；不需要输入 SSH 密码、应用管理员密码或 GitHub Token。
+- **GitHub 下载连接超时**：检查服务器 DNS 和到 `github.com`、`codeload.github.com` 的网络连接，或按第八节改用自己电脑下载后上传；仓库公开不会自动解决网络不可达的问题。
 - **解压提示不是 gzip 或 ZIP**：很可能下载到了错误页面，或下载中断。先解决下载错误，再重新下载和验证，不要用错误文件继续部署。
 - **Docker permission denied**：使用本文的 `sudo docker`；不要给 Docker socket 设置 777 权限。
 - **Cannot connect to the Docker daemon**：检查 Docker 服务是否启动，例如 Ubuntu 上执行 `sudo systemctl status docker`。
@@ -354,43 +333,6 @@ sudo docker compose version
 ```
 
 如果提示与 `docker.io`、旧 Compose、containerd 或 runc 冲突，应先核实是否已有业务使用它们，再参考官方说明处理，不要在有业务的机器上直接删除。
-
-## 附录 B 在 Ubuntu 安装 GitHub CLI
-
-只在 `gh --version` 不可用时执行。以下采用 [GitHub CLI 官方 Linux 安装源](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)，拆成几步方便检查：
-
-```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL \
-  https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-  -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
-sudo chmod a+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-```
-
-添加软件源：
-
-```bash
-sudo tee /etc/apt/sources.list.d/github-cli.sources > /dev/null <<EOF
-Types: deb
-URIs: https://cli.github.com/packages
-Suites: stable
-Components: main
-Architectures: $(dpkg --print-architecture)
-Signed-By: /etc/apt/keyrings/githubcli-archive-keyring.gpg
-EOF
-```
-
-安装并检查：
-
-```bash
-sudo apt-get update
-sudo apt-get install -y gh
-gh --version
-```
-
-完成后回到第三节进行授权；单纯安装 `gh` 不会自动取得私有仓库访问权限。
 
 ## 部署完成检查
 
